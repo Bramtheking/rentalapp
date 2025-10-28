@@ -13,11 +13,50 @@ class AuthWrapper extends StatelessWidget {
     return StreamBuilder<User?>(
       stream: AuthService().authStateChanges,
       builder: (context, snapshot) {
+        // Debug: Print connection state
+        print('AuthWrapper - Connection State: ${snapshot.connectionState}');
+        print('AuthWrapper - Has Data: ${snapshot.hasData}');
+        print('AuthWrapper - Data: ${snapshot.data}');
+        print('AuthWrapper - Error: ${snapshot.error}');
+
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
             body: Center(
-              child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.orange),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.orange),
+                  ),
+                  SizedBox(height: 16),
+                  Text('Initializing Firebase...'),
+                ],
+              ),
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return Scaffold(
+            body: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error, size: 64, color: Colors.red),
+                  const SizedBox(height: 16),
+                  Text('Error: ${snapshot.error}'),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () {
+                      // Force rebuild
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(builder: (context) => const AuthWrapper()),
+                      );
+                    },
+                    child: const Text('Retry'),
+                  ),
+                ],
               ),
             ),
           );
@@ -28,11 +67,45 @@ class AuthWrapper extends StatelessWidget {
           return FutureBuilder<Map<String, dynamic>?>(
             future: AuthService().getUserData(snapshot.data!.uid),
             builder: (context, userSnapshot) {
+              print('UserData - Connection State: ${userSnapshot.connectionState}');
+              print('UserData - Has Data: ${userSnapshot.hasData}');
+              print('UserData - Data: ${userSnapshot.data}');
+              print('UserData - Error: ${userSnapshot.error}');
+
               if (userSnapshot.connectionState == ConnectionState.waiting) {
                 return const Scaffold(
                   body: Center(
-                    child: CircularProgressIndicator(
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.orange),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        CircularProgressIndicator(
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.orange),
+                        ),
+                        SizedBox(height: 16),
+                        Text('Loading user data...'),
+                      ],
+                    ),
+                  ),
+                );
+              }
+
+              if (userSnapshot.hasError) {
+                return Scaffold(
+                  body: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.error, size: 64, color: Colors.red),
+                        const SizedBox(height: 16),
+                        Text('User Data Error: ${userSnapshot.error}'),
+                        const SizedBox(height: 16),
+                        ElevatedButton(
+                          onPressed: () async {
+                            await AuthService().signOut();
+                          },
+                          child: const Text('Sign Out'),
+                        ),
+                      ],
                     ),
                   ),
                 );
@@ -43,6 +116,8 @@ class AuthWrapper extends StatelessWidget {
                 final isActive = userData['isActive'] ?? false;
                 final userType = userData['userType'] ?? '';
 
+                print('User Type: $userType, Is Active: $isActive');
+
                 if (isActive && (userType == 'rentalmanager' || userType == 'admin' || userType == 'editor' || userType == 'superadmin')) {
                   return const HomeScreen();
                 } else {
@@ -51,12 +126,14 @@ class AuthWrapper extends StatelessWidget {
                 }
               } else {
                 // User signed in but no document in Firestore
+                print('User signed in but no Firestore document found');
                 return const UnauthorizedScreen();
               }
             },
           );
         } else {
           // User is not signed in
+          print('User is not signed in, showing login screen');
           return const LoginScreen();
         }
       },

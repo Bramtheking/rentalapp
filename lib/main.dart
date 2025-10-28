@@ -4,7 +4,15 @@ import 'screens/splash_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
+  
+  try {
+    print('Initializing Firebase...');
+    await Firebase.initializeApp();
+    print('Firebase initialized successfully!');
+  } catch (e) {
+    print('Firebase initialization error: $e');
+  }
+  
   runApp(const RentalApp());
 }
 
