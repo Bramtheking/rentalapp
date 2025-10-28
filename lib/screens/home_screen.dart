@@ -70,28 +70,33 @@ class HomePage extends StatelessWidget {
             icon: const Icon(Icons.notifications_outlined),
             onPressed: () {},
           ),
-          PopupMenuButton<String>(
-            onSelected: (value) async {
-              if (value == 'logout') {
-                await AuthService().signOut();
-              } else if (value == 'admin') {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const SuperAdminDashboard(),
-                  ),
-                );
-              }
-            },
-            itemBuilder: (BuildContext context) => [
-              // Show admin option only for super admin users
-              FutureBuilder<Map<String, dynamic>?>(
-                future: AuthService().getUserData(FirebaseAuth.instance.currentUser!.uid),
-                builder: (context, snapshot) {
-                  if (snapshot.hasData && snapshot.data != null) {
-                    final userType = snapshot.data!['userType'] ?? '';
-                    if (userType == 'superadmin') {
-                      return const PopupMenuItem<String>(
+          FutureBuilder<Map<String, dynamic>?>(
+            future: AuthService().getUserData(FirebaseAuth.instance.currentUser!.uid),
+            builder: (context, snapshot) {
+              final userType = snapshot.hasData && snapshot.data != null 
+                  ? snapshot.data!['userType'] ?? '' 
+                  : '';
+              
+              return PopupMenuButton<String>(
+                onSelected: (value) async {
+                  if (value == 'logout') {
+                    await AuthService().signOut();
+                  } else if (value == 'admin') {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const SuperAdminDashboard(),
+                      ),
+                    );
+                  }
+                },
+                itemBuilder: (BuildContext context) {
+                  List<PopupMenuEntry<String>> items = [];
+                  
+                  // Add admin option only for super admin users
+                  if (userType == 'superadmin') {
+                    items.add(
+                      const PopupMenuItem<String>(
                         value: 'admin',
                         child: Row(
                           children: [
@@ -100,27 +105,28 @@ class HomePage extends StatelessWidget {
                             Text('Super Admin'),
                           ],
                         ),
-                      );
-                    }
+                      ),
+                    );
                   }
-                  return const PopupMenuItem<String>(
-                    value: '',
-                    enabled: false,
-                    child: SizedBox.shrink(),
+                  
+                  // Always add logout option
+                  items.add(
+                    const PopupMenuItem<String>(
+                      value: 'logout',
+                      child: Row(
+                        children: [
+                          Icon(Icons.logout, color: Colors.orange),
+                          SizedBox(width: 8),
+                          Text('Sign Out'),
+                        ],
+                      ),
+                    ),
                   );
+                  
+                  return items;
                 },
-              ),
-              const PopupMenuItem<String>(
-                value: 'logout',
-                child: Row(
-                  children: [
-                    Icon(Icons.logout, color: Colors.orange),
-                    SizedBox(width: 8),
-                    Text('Sign Out'),
-                  ],
-                ),
-              ),
-            ],
+              );
+            },
           ),
         ],
       ),
