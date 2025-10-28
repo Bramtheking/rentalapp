@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "797104419981",
+    "project_id": "mercvenus-5bdb8",
+    "storage_bucket": "mercvenus-5bdb8.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:797104419981:android:15490e954f047f2cfcdec4",
+        "android_client_info": {
+          "package_name": "com.example.rentalapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyACUyS3xEStcvzRTLGWMX-ZcwtaFf-kb1A"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
