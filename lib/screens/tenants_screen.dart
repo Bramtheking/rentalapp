@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/tenant_model.dart';
-import '../models/user_model.dart';
 import '../services/tenant_service.dart';
 import '../services/auth_service.dart';
 import 'add_edit_tenant_screen.dart';
 
 class TenantsScreen extends StatefulWidget {
-  const TenantsScreen({Key? key}) : super(key: key);
+  const TenantsScreen({super.key});
 
   @override
   State<TenantsScreen> createState() => _TenantsScreenState();

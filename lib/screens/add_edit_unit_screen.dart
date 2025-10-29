@@ -8,10 +8,10 @@ class AddEditUnitScreen extends StatefulWidget {
   final Unit? unit;
 
   const AddEditUnitScreen({
-    Key? key,
+    super.key,
     required this.rentalId,
     this.unit,
-  }) : super(key: key);
+  });
 
   @override
   State<AddEditUnitScreen> createState() => _AddEditUnitScreenState();
@@ -193,7 +193,7 @@ class _AddEditUnitScreenState extends State<AddEditUnitScreen> {
                 children: [
                   Expanded(
                     child: DropdownButtonFormField<String>(
-                      value: _selectedType,
+                      initialValue: _selectedType,
                       decoration: const InputDecoration(
                         labelText: 'Unit Type *',
                         border: OutlineInputBorder(),
@@ -212,7 +212,7 @@ class _AddEditUnitScreenState extends State<AddEditUnitScreen> {
                   const SizedBox(width: 16),
                   Expanded(
                     child: DropdownButtonFormField<String>(
-                      value: _selectedStatus,
+                      initialValue: _selectedStatus,
                       decoration: const InputDecoration(
                         labelText: 'Status',
                         border: OutlineInputBorder(),

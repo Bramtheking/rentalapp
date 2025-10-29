@@ -5,7 +5,7 @@ import '../services/expense_service.dart';
 import '../models/expense_model.dart';
 
 class ExpensesScreen extends StatefulWidget {
-  const ExpensesScreen({Key? key}) : super(key: key);
+  const ExpensesScreen({super.key});
 
   @override
   State<ExpensesScreen> createState() => _ExpensesScreenState();
@@ -485,7 +485,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> with TickerProviderStat
                   builder: (context, setState) => Column(
                     children: [
                       DropdownButtonFormField<String>(
-                        value: selectedFrequency,
+                        initialValue: selectedFrequency,
                         decoration: const InputDecoration(
                           labelText: 'Frequency',
                           border: OutlineInputBorder(),
@@ -497,7 +497,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> with TickerProviderStat
                       ),
                       const SizedBox(height: 16),
                       DropdownButtonFormField<String>(
-                        value: selectedCategory,
+                        initialValue: selectedCategory,
                         decoration: const InputDecoration(
                           labelText: 'Category',
                           border: OutlineInputBorder(),
@@ -623,7 +623,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> with TickerProviderStat
                       ),
                       const SizedBox(height: 16),
                       DropdownButtonFormField<String>(
-                        value: selectedCategory,
+                        initialValue: selectedCategory,
                         decoration: const InputDecoration(
                           labelText: 'Category',
                           border: OutlineInputBorder(),

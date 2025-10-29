@@ -6,7 +6,7 @@ import '../services/auth_service.dart';
 import 'add_edit_unit_screen.dart';
 
 class UnitsScreen extends StatefulWidget {
-  const UnitsScreen({Key? key}) : super(key: key);
+  const UnitsScreen({super.key});
 
   @override
   State<UnitsScreen> createState() => _UnitsScreenState();

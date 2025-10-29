@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../services/auth_service.dart';
 import '../models/user_model.dart';
 import '../models/rental_model.dart';
 import '../utils/firebase_helper.dart';
@@ -383,7 +382,7 @@ class _AddUserTabState extends State<AddUserTab> {
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
-              value: _selectedUserType,
+              initialValue: _selectedUserType,
               decoration: const InputDecoration(
                 labelText: 'User Role',
                 border: OutlineInputBorder(),
@@ -420,7 +419,7 @@ class _AddUserTabState extends State<AddUserTab> {
                 final rentals = snapshot.data!.docs;
                 
                 return DropdownButtonFormField<String>(
-                  value: _selectedRentalId,
+                  initialValue: _selectedRentalId,
                   decoration: const InputDecoration(
                     labelText: 'Assign Rental Property (Optional)',
                     border: OutlineInputBorder(),
@@ -437,7 +436,7 @@ class _AddUserTabState extends State<AddUserTab> {
                         value: doc.id,
                         child: Text(data['name'] ?? 'Unknown Rental'),
                       );
-                    }).toList(),
+                    }),
                   ],
                   onChanged: (value) {
                     setState(() {
@@ -562,7 +561,7 @@ class _EditUserDialogState extends State<EditUserDialog> {
         mainAxisSize: MainAxisSize.min,
         children: [
           DropdownButtonFormField<String>(
-            value: _selectedUserType,
+            initialValue: _selectedUserType,
             decoration: const InputDecoration(
               labelText: 'User Role',
               border: OutlineInputBorder(),
@@ -598,7 +597,7 @@ class _EditUserDialogState extends State<EditUserDialog> {
               final rentals = snapshot.data!.docs;
               
               return DropdownButtonFormField<String>(
-                value: _selectedRentalId,
+                initialValue: _selectedRentalId,
                 decoration: const InputDecoration(
                   labelText: 'Rental Assignment',
                   border: OutlineInputBorder(),
@@ -614,7 +613,7 @@ class _EditUserDialogState extends State<EditUserDialog> {
                       value: doc.id,
                       child: Text(data['name'] ?? 'Unknown Rental'),
                     );
-                  }).toList(),
+                  }),
                 ],
                 onChanged: (value) {
                   setState(() {

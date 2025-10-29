@@ -668,7 +668,7 @@ class _DashboardPageState extends State<DashboardPage> {
                         value: doc.id,
                         child: Text(data['name'] ?? 'Unknown Building'),
                       );
-                    }).toList(),
+                    }),
                   ],
                   onChanged: (value) {
                     String newName = 'Select Building';
@@ -2281,7 +2281,7 @@ class _AddPaymentDialogState extends State<AddPaymentDialog> {
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
-                value: _selectedMethod,
+                initialValue: _selectedMethod,
                 decoration: const InputDecoration(
                   labelText: 'Payment Method',
                   border: OutlineInputBorder(),
@@ -2293,7 +2293,7 @@ class _AddPaymentDialogState extends State<AddPaymentDialog> {
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
-                value: _selectedStatus,
+                initialValue: _selectedStatus,
                 decoration: const InputDecoration(
                   labelText: 'Status',
                   border: OutlineInputBorder(),
@@ -3293,7 +3293,7 @@ class _AddTenantDialogState extends State<AddTenantDialog> {
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
-                value: _selectedStatus,
+                initialValue: _selectedStatus,
                 decoration: const InputDecoration(
                   labelText: 'Status',
                   border: OutlineInputBorder(),

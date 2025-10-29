@@ -3,7 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../services/auth_service.dart';
 
 class ReportsScreen extends StatefulWidget {
-  const ReportsScreen({Key? key}) : super(key: key);
+  const ReportsScreen({super.key});
 
   @override
   State<ReportsScreen> createState() => _ReportsScreenState();
@@ -140,7 +140,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 const SizedBox(width: 16),
                 Expanded(
                   child: DropdownButtonFormField<String>(
-                    value: selectedProperty,
+                    initialValue: selectedProperty,
                     decoration: const InputDecoration(
                       labelText: 'Property',
                       border: OutlineInputBorder(),

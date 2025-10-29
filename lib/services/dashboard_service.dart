@@ -15,11 +15,11 @@ class DashboardService {
         _getRentalInfo(rentalId),
       ]);
 
-      final unitsData = futures[0] as Map<String, dynamic>;
-      final tenantsData = futures[1] as Map<String, dynamic>;
-      final paymentsData = futures[2] as Map<String, dynamic>;
-      final expensesData = futures[3] as Map<String, dynamic>;
-      final rentalInfo = futures[4] as Map<String, dynamic>;
+      final unitsData = futures[0];
+      final tenantsData = futures[1];
+      final paymentsData = futures[2];
+      final expensesData = futures[3];
+      final rentalInfo = futures[4];
 
       // Calculate financial metrics
       final totalIncome = paymentsData['totalIncome'] ?? 0.0;

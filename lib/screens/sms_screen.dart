@@ -3,7 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../services/auth_service.dart';
 
 class SMSScreen extends StatefulWidget {
-  const SMSScreen({Key? key}) : super(key: key);
+  const SMSScreen({super.key});
 
   @override
   State<SMSScreen> createState() => _SMSScreenState();
