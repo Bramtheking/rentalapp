@@ -39,10 +39,37 @@ class AuthService {
   // Get user data from Firestore
   Future<Map<String, dynamic>?> getUserData(String uid) async {
     try {
+      // First try by document ID (UID)
       DocumentSnapshot doc = await _firestore.collection('users').doc(uid).get();
       if (doc.exists) {
         return doc.data() as Map<String, dynamic>?;
       }
+      
+      // If not found, try searching by UID field
+      QuerySnapshot querySnapshot = await _firestore
+          .collection('users')
+          .where('uid', isEqualTo: uid)
+          .limit(1)
+          .get();
+      
+      if (querySnapshot.docs.isNotEmpty) {
+        return querySnapshot.docs.first.data() as Map<String, dynamic>?;
+      }
+      
+      // If still not found, try searching by email
+      User? currentUser = _auth.currentUser;
+      if (currentUser != null) {
+        QuerySnapshot emailQuery = await _firestore
+            .collection('users')
+            .where('email', isEqualTo: currentUser.email)
+            .limit(1)
+            .get();
+        
+        if (emailQuery.docs.isNotEmpty) {
+          return emailQuery.docs.first.data() as Map<String, dynamic>?;
+        }
+      }
+      
       return null;
     } catch (e) {
       throw Exception('Failed to get user data: $e');

@@ -109,7 +109,7 @@ class _SplashScreenState extends State<SplashScreen>
               FadeTransition(
                 opacity: _fadeAnimation,
                 child: const Text(
-                  'RentEasy',
+                  'RentManager Pro',
                   style: TextStyle(
                     fontSize: 32,
                     fontWeight: FontWeight.bold,
@@ -122,7 +122,7 @@ class _SplashScreenState extends State<SplashScreen>
               FadeTransition(
                 opacity: _fadeAnimation,
                 child: const Text(
-                  'Find Your Perfect Rental',
+                  'Complete Rental Management Solution',
                   style: TextStyle(
                     fontSize: 16,
                     color: Colors.white70,

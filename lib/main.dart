@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
 import 'screens/splash_screen.dart';
 
 void main() async {
@@ -7,10 +8,13 @@ void main() async {
   
   try {
     print('Initializing Firebase...');
-    await Firebase.initializeApp();
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
     print('Firebase initialized successfully!');
   } catch (e) {
     print('Firebase initialization error: $e');
+    print('Running without Firebase for testing...');
   }
   
   runApp(const RentalApp());
