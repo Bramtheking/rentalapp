@@ -3,13 +3,14 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'package:telephony/telephony.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter_sms_inbox/flutter_sms_inbox.dart';
 import '../models/sms_format_model.dart';
 import '../models/tenant_model.dart';
 
 class SMSService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final Telephony telephony = Telephony.instance;
+  final SmsQuery _query = SmsQuery();
   
   // Platform detection
   bool get isWeb => kIsWeb;
@@ -255,8 +256,8 @@ class SMSService {
     if (!isMobile) return false;
     
     try {
-      bool? permissionsGranted = await telephony.requestPhoneAndSmsPermissions;
-      return permissionsGranted ?? false;
+      PermissionStatus status = await Permission.sms.request();
+      return status == PermissionStatus.granted;
     } catch (e) {
       print('Error requesting SMS permissions: $e');
       return false;
@@ -277,10 +278,10 @@ class SMSService {
         throw Exception('SMS permissions not granted');
       }
 
-      // Get SMS messages
-      List<SmsMessage> messages = await telephony.getInboxSms(
-        columns: [SmsColumn.ADDRESS, SmsColumn.BODY, SmsColumn.DATE],
-        sortOrder: [OrderBy(SmsColumn.DATE, sort: Sort.DESC)],
+      // Get SMS messages from inbox
+      List<SmsMessage> messages = await _query.querySms(
+        kinds: [SmsQueryKind.inbox],
+        count: limit ?? 100,
       );
 
       // Filter messages if needed
@@ -299,9 +300,13 @@ class SMSService {
         }).toList();
       }
 
-      if (limit != null && limit > 0) {
-        messages = messages.take(limit).toList();
-      }
+      // Sort by date descending (newest first)
+      messages.sort((a, b) {
+        DateTime? dateA = a.date;
+        DateTime? dateB = b.date;
+        if (dateA == null || dateB == null) return 0;
+        return dateB.compareTo(dateA);
+      });
 
       return messages;
     } catch (e) {

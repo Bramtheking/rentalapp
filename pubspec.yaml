@@ -49,8 +49,9 @@ dependencies:
   # CSV export
   csv: ^6.0.0
   
-  # SMS reading
-  telephony: ^0.2.0
+  # SMS reading and permissions
+  permission_handler: ^11.0.1
+  flutter_sms_inbox: ^1.0.2
 
 dev_dependencies:
   flutter_test:
