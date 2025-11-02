@@ -67,9 +67,9 @@ class AuthWrapper extends StatelessWidget {
           'units': {},
           'expenses': {},
         });
-        print('✅ Auto-created rental document: $rentalName');
+        // Auto-created rental document silently
       } else {
-        print('✅ Rental document already exists: $rentalName');
+        // Rental document already exists
       }
     } catch (e) {
       print('❌ Error creating rental document: $e');
@@ -165,43 +165,13 @@ class AuthWrapper extends StatelessWidget {
                   // SuperAdmin goes to admin dashboard - no rental creation
                   return const SuperAdminDashboard();
                 } else if (userType == 'rentalmanager') {
-                  // RentalManager can create rentals if they don't exist
-                  if (rentalName != null && rentalName.isNotEmpty) {
-                    // Create rental document if it doesn't exist, then go to HomeScreen
-                    _createRentalDocumentIfNotExists(rentalName, snapshot.data!.uid);
-                    return const HomeScreen();
-                  } else {
-                    // No rental assigned - show message to contact admin
-                    return const NoRentalAssignedScreen();
-                  }
+                  // RentalManager can always access HomeScreen and create buildings
+                  return const HomeScreen();
                 } else if (userType == 'editor') {
-                  // Editor can only open existing rentals, cannot create new ones
-                  if (rentalName != null && rentalName.isNotEmpty) {
-                    // Check if rental exists first
-                    return FutureBuilder<DocumentSnapshot>(
-                      future: FirebaseFirestore.instance.collection('rentals').doc(rentalName).get(),
-                      builder: (context, rentalDoc) {
-                        if (rentalDoc.connectionState == ConnectionState.waiting) {
-                          return const Scaffold(
-                            body: Center(child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(Colors.orange))),
-                          );
-                        }
-                        
-                        if (rentalDoc.hasData && rentalDoc.data!.exists) {
-                          // Rental exists - editor can access it
-                          return const HomeScreen();
-                        } else {
-                          // Rental doesn't exist - editor cannot create it
-                          return const RentalNotFoundScreen();
-                        }
-                      },
-                    );
-                  } else {
-                    // No rental assigned - show message to contact admin
-                    return const NoRentalAssignedScreen();
-                  }
+                  // Editor can access HomeScreen but won't see buildings until assigned
+                  return const HomeScreen();
                 } else {
-                  // Default case
+                  // Default case - allow access to HomeScreen
                   return const HomeScreen();
                 }
               } else {

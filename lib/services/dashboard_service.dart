@@ -47,6 +47,26 @@ class DashboardService {
     }
   }
 
+  // Public method to get units data independently
+  Future<Map<String, dynamic>> getUnitsData(String rentalId) async {
+    return await _getUnitsData(rentalId);
+  }
+
+  // Public method to get tenants data independently
+  Future<Map<String, dynamic>> getTenantsData(String rentalId) async {
+    return await _getTenantsData(rentalId);
+  }
+
+  // Public method to get payments data independently
+  Future<Map<String, dynamic>> getPaymentsData(String rentalId) async {
+    return await _getPaymentsData(rentalId);
+  }
+
+  // Public method to get expenses data independently
+  Future<Map<String, dynamic>> getExpensesData(String rentalId) async {
+    return await _getExpensesData(rentalId);
+  }
+
   // Get units statistics
   Future<Map<String, dynamic>> _getUnitsData(String rentalId) async {
     final snapshot = await _firestore
@@ -136,22 +156,27 @@ class DashboardService {
     final currentMonth = DateTime(now.year, now.month, 1);
     final lastMonth = DateTime(now.year, now.month - 1, 1);
     
-    // Current month payments
-    final currentMonthSnapshot = await _firestore
-        .collection('rentals')
-        .doc(rentalId)
-        .collection('payments')
-        .where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(currentMonth))
-        .get();
-
-    // Last month payments for comparison
-    final lastMonthSnapshot = await _firestore
-        .collection('rentals')
-        .doc(rentalId)
-        .collection('payments')
-        .where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(lastMonth))
-        .where('createdAt', isLessThan: Timestamp.fromDate(currentMonth))
-        .get();
+    // Get both current and last month payments in parallel
+    final futures = await Future.wait([
+      _firestore
+          .collection('rentals')
+          .doc(rentalId)
+          .collection('payments')
+          .where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(currentMonth))
+          .limit(100) // Limit to improve performance
+          .get(),
+      _firestore
+          .collection('rentals')
+          .doc(rentalId)
+          .collection('payments')
+          .where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(lastMonth))
+          .where('createdAt', isLessThan: Timestamp.fromDate(currentMonth))
+          .limit(100) // Limit to improve performance
+          .get(),
+    ]);
+    
+    final currentMonthSnapshot = futures[0];
+    final lastMonthSnapshot = futures[1];
 
     double currentMonthTotal = 0;
     double lastMonthTotal = 0;
@@ -252,47 +277,66 @@ class DashboardService {
     return {};
   }
 
-  // Get monthly trends for charts (last 6 months)
+  // Get monthly trends for charts (last 6 months) - optimized
   Future<List<Map<String, dynamic>>> getMonthlyTrends(String rentalId) async {
     final now = DateTime.now();
     List<Map<String, dynamic>> trends = [];
 
+    // Create all the futures first, then execute them in parallel
+    List<Future<QuerySnapshot>> paymentFutures = [];
+    List<Future<QuerySnapshot>> expenseFutures = [];
+    List<DateTime> months = [];
+
     for (int i = 5; i >= 0; i--) {
       final month = DateTime(now.year, now.month - i, 1);
       final nextMonth = DateTime(now.year, now.month - i + 1, 1);
+      months.add(month);
       
-      // Get payments for this month
-      final paymentsSnapshot = await _firestore
-          .collection('rentals')
-          .doc(rentalId)
-          .collection('payments')
-          .where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(month))
-          .where('createdAt', isLessThan: Timestamp.fromDate(nextMonth))
-          .get();
+      paymentFutures.add(
+        _firestore
+            .collection('rentals')
+            .doc(rentalId)
+            .collection('payments')
+            .where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(month))
+            .where('createdAt', isLessThan: Timestamp.fromDate(nextMonth))
+            .limit(50) // Limit for performance
+            .get()
+      );
 
-      // Get expenses for this month
-      final expensesSnapshot = await _firestore
-          .collection('rentals')
-          .doc(rentalId)
-          .collection('expenses')
-          .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(month))
-          .where('date', isLessThan: Timestamp.fromDate(nextMonth))
-          .get();
+      expenseFutures.add(
+        _firestore
+            .collection('rentals')
+            .doc(rentalId)
+            .collection('expenses')
+            .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(month))
+            .where('date', isLessThan: Timestamp.fromDate(nextMonth))
+            .limit(50) // Limit for performance
+            .get()
+      );
+    }
 
+    // Execute all queries in parallel
+    final paymentResults = await Future.wait(paymentFutures);
+    final expenseResults = await Future.wait(expenseFutures);
+
+    // Process results
+    for (int i = 0; i < months.length; i++) {
       double monthlyIncome = 0;
       double monthlyExpenses = 0;
 
-      for (var doc in paymentsSnapshot.docs) {
-        monthlyIncome += (doc.data()['amount'] ?? 0).toDouble();
+      for (var doc in paymentResults[i].docs) {
+        final data = doc.data() as Map<String, dynamic>?;
+        monthlyIncome += (data?['amount'] ?? 0).toDouble();
       }
 
-      for (var doc in expensesSnapshot.docs) {
-        monthlyExpenses += (doc.data()['amount'] ?? 0).toDouble();
+      for (var doc in expenseResults[i].docs) {
+        final data = doc.data() as Map<String, dynamic>?;
+        monthlyExpenses += (data?['amount'] ?? 0).toDouble();
       }
 
       trends.add({
-        'month': month,
-        'monthName': _getMonthName(month.month),
+        'month': months[i],
+        'monthName': _getMonthName(months[i].month),
         'income': monthlyIncome,
         'expenses': monthlyExpenses,
         'profit': monthlyIncome - monthlyExpenses,

@@ -67,8 +67,6 @@ class _ExpensesScreenState extends State<ExpensesScreen> with TickerProviderStat
     return Scaffold(
       appBar: AppBar(
         title: const Text('Expenses'),
-        backgroundColor: Colors.blue[700],
-        foregroundColor: Colors.white,
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
@@ -114,7 +112,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> with TickerProviderStat
                 icon: const Icon(Icons.add),
                 label: const Text('Add Recurring Expense'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange[700],
+                  backgroundColor: const Color(0xFF667eea),
                   foregroundColor: Colors.white,
                 ),
               ),
@@ -226,7 +224,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> with TickerProviderStat
                 icon: const Icon(Icons.add),
                 label: const Text('Add New Expense'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange[700],
+                  backgroundColor: const Color(0xFF667eea),
                   foregroundColor: Colors.white,
                 ),
               ),
@@ -433,9 +431,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> with TickerProviderStat
   Color _getCategoryColor(String category) {
     switch (category.toLowerCase()) {
       case 'maintenance':
-        return Colors.orange;
+        return const Color(0xFFf093fb);
       case 'utilities':
-        return Colors.blue;
+        return const Color(0xFF764ba2);
       case 'security':
         return Colors.green;
       case 'insurance':

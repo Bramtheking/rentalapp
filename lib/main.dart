@@ -29,28 +29,40 @@ class RentalApp extends StatelessWidget {
       title: 'Rental App',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        primarySwatch: Colors.orange,
-        primaryColor: Colors.orange,
+        primarySwatch: Colors.deepPurple,
+        primaryColor: const Color(0xFF667eea),
         colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.orange,
-          primary: Colors.orange,
-          secondary: Colors.orangeAccent,
+          seedColor: const Color(0xFF667eea),
+          primary: const Color(0xFF667eea),
+          secondary: const Color(0xFF764ba2),
+          tertiary: const Color(0xFFf093fb),
         ),
         useMaterial3: true,
         appBarTheme: const AppBarTheme(
-          backgroundColor: Colors.orange,
+          backgroundColor: Color(0xFF667eea),
           foregroundColor: Colors.white,
           elevation: 0,
         ),
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.orange,
+            backgroundColor: const Color(0xFF667eea),
             foregroundColor: Colors.white,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
             ),
             padding: const EdgeInsets.symmetric(vertical: 16),
           ),
+        ),
+        floatingActionButtonTheme: const FloatingActionButtonThemeData(
+          backgroundColor: Color(0xFF667eea),
+          foregroundColor: Colors.white,
+        ),
+        cardTheme: CardThemeData(
+          elevation: 8,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          shadowColor: const Color(0xFF667eea).withOpacity(0.3),
         ),
       ),
       home: const SplashScreen(),

@@ -70,38 +70,160 @@ class _UnitsScreenState extends State<UnitsScreen> with TickerProviderStateMixin
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+      return Scaffold(
+        body: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Color(0xFF667eea),
+                Color(0xFF764ba2),
+              ],
+            ),
+          ),
+          child: const Center(
+            child: CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+            ),
+          ),
+        ),
       );
     }
 
     if (selectedRentalId == null) {
-      return const Scaffold(
-        body: Center(
-          child: Text('No rental assigned to your account'),
+      return Scaffold(
+        body: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Color(0xFF667eea),
+                Color(0xFF764ba2),
+              ],
+            ),
+          ),
+          child: const Center(
+            child: Text(
+              'No rental assigned to your account',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
         ),
       );
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Unit Management'),
-        backgroundColor: Colors.blue[700],
-        foregroundColor: Colors.white,
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: const [
-            Tab(text: 'Units'),
-            Tab(text: 'Damage Control'),
-          ],
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xFF667eea),
+              Color(0xFF764ba2),
+              Color(0xFFf093fb),
+            ],
+            stops: [0.0, 0.6, 1.0],
+          ),
         ),
-      ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _buildUnitsTab(),
-          _buildDamageControlTab(),
-        ],
+        child: SafeArea(
+          child: Column(
+            children: [
+              // Beautiful Header with Tabs
+              Container(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.3),
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.home_work_rounded,
+                            color: Colors.white,
+                            size: 28,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Unit Management',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              Text(
+                                'Manage units and damage reports',
+                                style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    // Beautiful Tab Bar
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.3),
+                        ),
+                      ),
+                      child: TabBar(
+                        controller: _tabController,
+                        indicator: BoxDecoration(
+                          color: Colors.white.withOpacity(0.3),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        labelColor: Colors.white,
+                        unselectedLabelColor: Colors.white.withOpacity(0.7),
+                        labelStyle: const TextStyle(fontWeight: FontWeight.w600),
+                        tabs: const [
+                          Tab(text: 'Units'),
+                          Tab(text: 'Damage Control'),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              
+              // Tab Content
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildUnitsTab(),
+                    _buildDamageControlTab(),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -111,184 +233,201 @@ class _UnitsScreenState extends State<UnitsScreen> with TickerProviderStateMixin
       children: [
         // Statistics Cards
         Container(
-          padding: const EdgeInsets.all(16),
+          height: 120,
+          margin: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(
             children: [
               Expanded(
-                child: _buildStatCard(
+                child: _buildModernStatCard(
                   'Total Units',
                   unitStats['totalUnits']?.toString() ?? '0',
-                  Icons.home,
-                  Colors.orange,
+                  Icons.home_rounded,
+                  const Color(0xFF667eea),
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 12),
               Expanded(
-                child: _buildStatCard(
-                  'Occupied Units',
+                child: _buildModernStatCard(
+                  'Occupied',
                   unitStats['occupiedUnits']?.toString() ?? '0',
-                  Icons.home,
+                  Icons.check_circle_rounded,
                   Colors.green,
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 12),
               Expanded(
-                child: _buildStatCard(
-                  'Vacant Units',
+                child: _buildModernStatCard(
+                  'Vacant',
                   unitStats['vacantUnits']?.toString() ?? '0',
                   Icons.home_outlined,
                   Colors.blue,
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 12),
               Expanded(
-                child: _buildStatCard(
-                  'Under Maintenance',
+                child: _buildModernStatCard(
+                  'Maintenance',
                   unitStats['underMaintenance']?.toString() ?? '0',
-                  Icons.build,
+                  Icons.build_rounded,
                   Colors.red,
                 ),
               ),
             ],
           ),
         ),
-
-        // Units List Header
-        Container(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Units List',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  Text(
-                    'Manage all rental units',
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
-                ],
-              ),
-              ElevatedButton.icon(
-                onPressed: () => _navigateToAddUnit(),
-                icon: const Icon(Icons.add),
-                label: const Text('Add Unit'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange,
-                  foregroundColor: Colors.white,
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        // Search Bar
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: TextField(
-            controller: _searchController,
-            decoration: InputDecoration(
-              hintText: 'Search units...',
-              prefixIcon: const Icon(Icons.search),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              filled: true,
-              fillColor: Colors.grey[100],
-            ),
-            onChanged: (value) {
-              setState(() {}); // Trigger rebuild for search
-            },
-          ),
-        ),
-
-        const SizedBox(height: 16),
-
+        
+        const SizedBox(height: 24),
+        
         // Units List
         Expanded(
-          child: StreamBuilder<List<Unit>>(
-            stream: _unitService.getUnits(selectedRentalId!),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-
-              if (snapshot.hasError) {
-                return Center(child: Text('Error: ${snapshot.error}'));
-              }
-
-              final units = snapshot.data ?? [];
-
-              // Apply search filter
-              final query = _searchController.text.toLowerCase();
-              final filteredUnits = query.isEmpty
-                  ? units
-                  : units.where((unit) =>
-                      unit.unitId.toLowerCase().contains(query) ||
-                      unit.unitName.toLowerCase().contains(query) ||
-                      unit.type.toLowerCase().contains(query) ||
-                      (unit.tenantName?.toLowerCase().contains(query) ?? false)).toList();
-
-              if (filteredUnits.isEmpty) {
-                return const Center(
-                  child: Text('No units found'),
-                );
-              }
-
-              return Container(
-                margin: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(8),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.grey.withOpacity(0.1),
-                      blurRadius: 4,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    // Table Header
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: const BoxDecoration(
-                        color: Colors.grey,
-                        borderRadius: BorderRadius.only(
-                          topLeft: Radius.circular(8),
-                          topRight: Radius.circular(8),
-                        ),
-                      ),
-                      child: const Row(
+          child: Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(32),
+                topRight: Radius.circular(32),
+              ),
+            ),
+            child: Column(
+              children: [
+                // Header with Add Button and Search
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Expanded(flex: 1, child: Text('Unit ID', style: TextStyle(fontWeight: FontWeight.bold))),
-                          Expanded(flex: 2, child: Text('Unit Name', style: TextStyle(fontWeight: FontWeight.bold))),
-                          Expanded(flex: 1, child: Text('Type', style: TextStyle(fontWeight: FontWeight.bold))),
-                          Expanded(flex: 1, child: Text('Status', style: TextStyle(fontWeight: FontWeight.bold))),
-                          Expanded(flex: 2, child: Text('Rent', style: TextStyle(fontWeight: FontWeight.bold))),
-                          Expanded(flex: 2, child: Text('Tenant', style: TextStyle(fontWeight: FontWeight.bold))),
-                          Expanded(flex: 1, child: Text('Actions', style: TextStyle(fontWeight: FontWeight.bold))),
+                          const Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Units List',
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF2D3748),
+                                ),
+                              ),
+                              Text(
+                                'Manage all rental units',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            ],
+                          ),
+                          ElevatedButton.icon(
+                            onPressed: () => _navigateToAddUnit(),
+                            icon: const Icon(Icons.add_rounded),
+                            label: const Text('Add Unit'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF667eea),
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                            ),
+                          ),
                         ],
                       ),
-                    ),
-                    // Table Body
-                    Expanded(
-                      child: ListView.builder(
+                      const SizedBox(height: 16),
+                      // Search Bar
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.grey[100],
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: TextField(
+                          controller: _searchController,
+                          decoration: InputDecoration(
+                            hintText: 'Search units...',
+                            prefixIcon: Icon(Icons.search_rounded, color: Colors.grey[600]),
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.all(16),
+                          ),
+                          onChanged: (value) {
+                            setState(() {}); // Trigger rebuild for search
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                // Units List
+                Expanded(
+                  child: StreamBuilder<List<Unit>>(
+                    stream: _unitService.getUnits(selectedRentalId!),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(
+                          child: CircularProgressIndicator(
+                            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF667eea)),
+                          ),
+                        );
+                      }
+
+                      if (snapshot.hasError) {
+                        return Center(
+                          child: Text(
+                            'Error: ${snapshot.error}',
+                            style: const TextStyle(color: Colors.red),
+                          ),
+                        );
+                      }
+
+                      final units = snapshot.data ?? [];
+
+                      // Apply search filter
+                      final query = _searchController.text.toLowerCase();
+                      final filteredUnits = query.isEmpty
+                          ? units
+                          : units.where((unit) =>
+                              unit.unitId.toLowerCase().contains(query) ||
+                              unit.unitName.toLowerCase().contains(query) ||
+                              unit.type.toLowerCase().contains(query) ||
+                              (unit.tenantName?.toLowerCase().contains(query) ?? false)).toList();
+
+                      if (filteredUnits.isEmpty) {
+                        return Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.home_work_outlined,
+                                size: 64,
+                                color: Colors.grey[400],
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'No units found',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  color: Colors.grey[600],
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+
+                      return ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
                         itemCount: filteredUnits.length,
                         itemBuilder: (context, index) {
                           final unit = filteredUnits[index];
-                          return _buildUnitRow(unit);
+                          return _buildModernUnitCard(unit);
                         },
-                      ),
-                    ),
-                  ],
+                      );
+                    },
+                  ),
                 ),
-              );
-            },
+              ],
+            ),
           ),
         ),
       ],
@@ -300,203 +439,237 @@ class _UnitsScreenState extends State<UnitsScreen> with TickerProviderStateMixin
       children: [
         // Damage Statistics
         Container(
-          padding: const EdgeInsets.all(16),
+          height: 120,
+          margin: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(
             children: [
               Expanded(
-                child: _buildStatCard(
-                  'All',
+                child: _buildModernStatCard(
+                  'All Reports',
                   damageStats['totalReports']?.toString() ?? '0',
-                  Icons.report_problem,
+                  Icons.report_problem_rounded,
                   Colors.blue,
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 12),
               Expanded(
-                child: _buildStatCard(
+                child: _buildModernStatCard(
                   'Pending',
                   damageStats['pendingReports']?.toString() ?? '0',
-                  Icons.pending,
-                  Colors.orange,
+                  Icons.pending_rounded,
+                  const Color(0xFFf093fb),
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 12),
               Expanded(
-                child: _buildStatCard(
+                child: _buildModernStatCard(
                   'In Progress',
                   damageStats['inProgressReports']?.toString() ?? '0',
-                  Icons.build,
+                  Icons.build_rounded,
                   Colors.blue,
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 12),
               Expanded(
-                child: _buildStatCard(
+                child: _buildModernStatCard(
                   'Repaired',
                   damageStats['repairedReports']?.toString() ?? '0',
-                  Icons.check_circle,
+                  Icons.check_circle_rounded,
                   Colors.green,
                 ),
               ),
             ],
           ),
         ),
-
-        // Damage Control Header
-        Container(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Damage Control',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  Text(
-                    'Track and manage property damage',
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
-                ],
-              ),
-              Row(
-                children: [
-                  ElevatedButton.icon(
-                    onPressed: () => _navigateToDamageReport(),
-                    icon: const Icon(Icons.report),
-                    label: const Text('Report Damage'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red,
-                      foregroundColor: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton.icon(
-                    onPressed: () => _navigateToRecordRepair(),
-                    icon: const Icon(Icons.build),
-                    label: const Text('Record Repair'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
-                      foregroundColor: Colors.white,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-
+        
+        const SizedBox(height: 24),
+        
         // Damage Reports List
         Expanded(
-          child: StreamBuilder<List<DamageReport>>(
-            stream: _unitService.getDamageReports(selectedRentalId!),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-
-              if (snapshot.hasError) {
-                return Center(child: Text('Error: ${snapshot.error}'));
-              }
-
-              final reports = snapshot.data ?? [];
-
-              if (reports.isEmpty) {
-                return const Center(
-                  child: Text('No damage reports found'),
-                );
-              }
-
-              return Container(
-                margin: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(8),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.grey.withOpacity(0.1),
-                      blurRadius: 4,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    // Table Header
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: const BoxDecoration(
-                        color: Colors.grey,
-                        borderRadius: BorderRadius.only(
-                          topLeft: Radius.circular(8),
-                          topRight: Radius.circular(8),
-                        ),
-                      ),
-                      child: const Row(
+          child: Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(32),
+                topRight: Radius.circular(32),
+              ),
+            ),
+            child: Column(
+              children: [
+                // Header with Action Buttons
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Expanded(flex: 1, child: Text('Damage ID', style: TextStyle(fontWeight: FontWeight.bold))),
-                          Expanded(flex: 3, child: Text('Description', style: TextStyle(fontWeight: FontWeight.bold))),
-                          Expanded(flex: 1, child: Text('Unit', style: TextStyle(fontWeight: FontWeight.bold))),
-                          Expanded(flex: 2, child: Text('Reported By', style: TextStyle(fontWeight: FontWeight.bold))),
-                          Expanded(flex: 2, child: Text('Date Reported', style: TextStyle(fontWeight: FontWeight.bold))),
-                          Expanded(flex: 1, child: Text('Status', style: TextStyle(fontWeight: FontWeight.bold))),
-                          Expanded(flex: 1, child: Text('Priority', style: TextStyle(fontWeight: FontWeight.bold))),
-                          Expanded(flex: 1, child: Text('Actions', style: TextStyle(fontWeight: FontWeight.bold))),
+                          const Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Damage Control',
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF2D3748),
+                                ),
+                              ),
+                              Text(
+                                'Track and manage property damage',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Row(
+                            children: [
+                              ElevatedButton.icon(
+                                onPressed: () => _navigateToDamageReport(),
+                                icon: const Icon(Icons.report_rounded),
+                                label: const Text('Report'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.red,
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              ElevatedButton.icon(
+                                onPressed: () => _navigateToRecordRepair(),
+                                icon: const Icon(Icons.build_rounded),
+                                label: const Text('Repair'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.green,
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ],
                       ),
-                    ),
-                    // Table Body
-                    Expanded(
-                      child: ListView.builder(
+                    ],
+                  ),
+                ),
+                
+                // Damage Reports List
+                Expanded(
+                  child: StreamBuilder<List<DamageReport>>(
+                    stream: _unitService.getDamageReports(selectedRentalId!),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(
+                          child: CircularProgressIndicator(
+                            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF667eea)),
+                          ),
+                        );
+                      }
+
+                      if (snapshot.hasError) {
+                        return Center(
+                          child: Text(
+                            'Error: ${snapshot.error}',
+                            style: const TextStyle(color: Colors.red),
+                          ),
+                        );
+                      }
+
+                      final reports = snapshot.data ?? [];
+
+                      if (reports.isEmpty) {
+                        return Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.report_problem_outlined,
+                                size: 64,
+                                color: Colors.grey[400],
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'No damage reports found',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  color: Colors.grey[600],
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+
+                      return ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
                         itemCount: reports.length,
                         itemBuilder: (context, index) {
                           final report = reports[index];
-                          return _buildDamageReportRow(report);
+                          return _buildModernDamageReportCard(report);
                         },
-                      ),
-                    ),
-                  ],
+                      );
+                    },
+                  ),
                 ),
-              );
-            },
+              ],
+            ),
           ),
         ),
       ],
     );
   }
 
-  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            Icon(icon, color: color, size: 32),
-            const SizedBox(height: 8),
-            Text(
-              value,
-              style: const TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey[600],
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
+  Widget _buildModernStatCard(String title, String value, IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.3),
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, color: Colors.white, size: 28),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.white.withOpacity(0.8),
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildUnitRow(Unit unit) {
+  Widget _buildModernUnitCard(Unit unit) {
     Color statusColor = Colors.grey;
     switch (unit.status) {
       case 'occupied':
@@ -511,73 +684,163 @@ class _UnitsScreenState extends State<UnitsScreen> with TickerProviderStateMixin
     }
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(color: Colors.grey.shade200),
-        ),
-      ),
-      child: Row(
-        children: [
-          Expanded(flex: 1, child: Text(unit.unitId)),
-          Expanded(flex: 2, child: Text(unit.unitName)),
-          Expanded(flex: 1, child: Text(unit.type)),
-          Expanded(
-            flex: 1,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: statusColor,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                unit.status.replaceAll('_', ' ').toUpperCase(),
-                style: const TextStyle(color: Colors.white, fontSize: 12),
-                textAlign: TextAlign.center,
-              ),
-            ),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF667eea).withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
           ),
-          Expanded(flex: 2, child: Text('KES ${unit.rent.toStringAsFixed(0)}')),
-          Expanded(flex: 2, child: Text(unit.tenantName ?? '-')),
-          Expanded(
-            flex: 1,
-            child: PopupMenuButton<String>(
-              onSelected: (value) => _handleUnitAction(value, unit),
-              itemBuilder: (context) => [
-                const PopupMenuItem(
-                  value: 'edit',
-                  child: ListTile(
-                    leading: Icon(Icons.edit),
-                    title: Text('Edit'),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: () => _showUnitDetails(unit),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Row(
+              children: [
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [statusColor, statusColor.withOpacity(0.7)],
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Center(
+                    child: Text(
+                      unit.unitId,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ),
-                const PopupMenuItem(
-                  value: 'view',
-                  child: ListTile(
-                    leading: Icon(Icons.visibility),
-                    title: Text('View Details'),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        unit.unitName,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF2D3748),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Icon(Icons.category_rounded, size: 16, color: Colors.grey[600]),
+                          const SizedBox(width: 4),
+                          Text(
+                            unit.type,
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Icon(Icons.attach_money_rounded, size: 16, color: Colors.grey[600]),
+                          const SizedBox(width: 4),
+                          Text(
+                            'KES ${unit.rent.toStringAsFixed(0)}',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[600],
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: statusColor.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              unit.status.replaceAll('_', ' ').toUpperCase(),
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: statusColor,
+                              ),
+                            ),
+                          ),
+                          if (unit.tenantName != null) ...[
+                            const SizedBox(width: 12),
+                            Icon(Icons.person_rounded, size: 16, color: Colors.grey[600]),
+                            const SizedBox(width: 4),
+                            Text(
+                              unit.tenantName!,
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
                   ),
                 ),
-                const PopupMenuItem(
-                  value: 'delete',
-                  child: ListTile(
-                    leading: Icon(Icons.delete, color: Colors.red),
-                    title: Text('Delete', style: TextStyle(color: Colors.red)),
-                  ),
+                PopupMenuButton<String>(
+                  onSelected: (value) => _handleUnitAction(value, unit),
+                  icon: Icon(Icons.more_vert_rounded, color: Colors.grey[400]),
+                  itemBuilder: (context) => [
+                    const PopupMenuItem(
+                      value: 'edit',
+                      child: ListTile(
+                        leading: Icon(Icons.edit_rounded, color: Color(0xFF667eea)),
+                        title: Text('Edit'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'view',
+                      child: ListTile(
+                        leading: Icon(Icons.visibility_rounded, color: Colors.blue),
+                        title: Text('View Details'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'delete',
+                      child: ListTile(
+                        leading: Icon(Icons.delete_rounded, color: Colors.red),
+                        title: Text('Delete', style: TextStyle(color: Colors.red)),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _buildDamageReportRow(DamageReport report) {
+  Widget _buildModernDamageReportCard(DamageReport report) {
     Color statusColor = Colors.grey;
     switch (report.status) {
       case 'pending':
-        statusColor = Colors.orange;
+        statusColor = const Color(0xFFf093fb);
         break;
       case 'in_progress':
         statusColor = Colors.blue;
@@ -593,7 +856,7 @@ class _UnitsScreenState extends State<UnitsScreen> with TickerProviderStateMixin
         priorityColor = Colors.green;
         break;
       case 'medium':
-        priorityColor = Colors.orange;
+        priorityColor = const Color(0xFFf093fb);
         break;
       case 'high':
         priorityColor = Colors.red;
@@ -601,111 +864,160 @@ class _UnitsScreenState extends State<UnitsScreen> with TickerProviderStateMixin
     }
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(color: Colors.grey.shade200),
-        ),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF667eea).withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
       ),
-      child: Row(
-        children: [
-          Expanded(flex: 1, child: Text(report.damageId)),
-          Expanded(flex: 3, child: Text(report.description, maxLines: 2, overflow: TextOverflow.ellipsis)),
-          Expanded(flex: 1, child: Text(report.unitName)),
-          Expanded(flex: 2, child: Text(report.reportedBy)),
-          Expanded(flex: 2, child: Text(report.dateReported.toString().split(' ')[0])),
-          Expanded(
-            flex: 1,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: statusColor,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                report.status.replaceAll('_', ' ').toUpperCase(),
-                style: const TextStyle(color: Colors.white, fontSize: 12),
-                textAlign: TextAlign.center,
-              ),
-            ),
-          ),
-          Expanded(
-            flex: 1,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: priorityColor,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                report.priority.toUpperCase(),
-                style: const TextStyle(color: Colors.white, fontSize: 12),
-                textAlign: TextAlign.center,
-              ),
-            ),
-          ),
-          Expanded(
-            flex: 1,
-            child: PopupMenuButton<String>(
-              onSelected: (value) => _handleDamageAction(value, report),
-              itemBuilder: (context) => [
-                const PopupMenuItem(
-                  value: 'view',
-                  child: ListTile(
-                    leading: Icon(Icons.visibility),
-                    title: Text('View'),
-                  ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: () => _showDamageDetails(report),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: priorityColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        Icons.report_problem_rounded,
+                        color: priorityColor,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Damage ID: ${report.damageId}',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF2D3748),
+                            ),
+                          ),
+                          Text(
+                            'Unit: ${report.unitName}',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    PopupMenuButton<String>(
+                      onSelected: (value) => _handleDamageAction(value, report),
+                      icon: Icon(Icons.more_vert_rounded, color: Colors.grey[400]),
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(
+                          value: 'view',
+                          child: ListTile(
+                            leading: Icon(Icons.visibility_rounded, color: Colors.blue),
+                            title: Text('View'),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ),
+                        const PopupMenuItem(
+                          value: 'edit',
+                          child: ListTile(
+                            leading: Icon(Icons.edit_rounded, color: Color(0xFF667eea)),
+                            title: Text('Edit'),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ),
+                        const PopupMenuItem(
+                          value: 'delete',
+                          child: ListTile(
+                            leading: Icon(Icons.delete_rounded, color: Colors.red),
+                            title: Text('Delete', style: TextStyle(color: Colors.red)),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
-                const PopupMenuItem(
-                  value: 'edit',
-                  child: ListTile(
-                    leading: Icon(Icons.edit),
-                    title: Text('Edit'),
+                const SizedBox(height: 12),
+                Text(
+                  report.description,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[700],
                   ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                const PopupMenuItem(
-                  value: 'delete',
-                  child: ListTile(
-                    leading: Icon(Icons.delete, color: Colors.red),
-                    title: Text('Delete', style: TextStyle(color: Colors.red)),
-                  ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: statusColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        report.status.replaceAll('_', ' ').toUpperCase(),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: statusColor,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: priorityColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '${report.priority.toUpperCase()} PRIORITY',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: priorityColor,
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      report.dateReported.toString().split(' ')[0],
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
 
-  void _handleUnitAction(String action, Unit unit) {
-    switch (action) {
-      case 'edit':
-        _navigateToEditUnit(unit);
-        break;
-      case 'view':
-        _showUnitDetails(unit);
-        break;
-      case 'delete':
-        _showDeleteUnitDialog(unit);
-        break;
-    }
-  }
-
-  void _handleDamageAction(String action, DamageReport report) {
-    switch (action) {
-      case 'view':
-        _showDamageDetails(report);
-        break;
-      case 'edit':
-        _navigateToEditDamageReport(report);
-        break;
-      case 'delete':
-        _showDeleteDamageDialog(report);
-        break;
-    }
-  }
-
+  // Navigation and action methods
   void _navigateToAddUnit() {
     Navigator.push(
       context,
@@ -730,31 +1042,78 @@ class _UnitsScreenState extends State<UnitsScreen> with TickerProviderStateMixin
   }
 
   void _navigateToDamageReport() {
-    // TODO: Implement damage report navigation
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Damage report feature coming soon')),
     );
   }
 
   void _navigateToRecordRepair() {
-    // TODO: Implement record repair screen
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Record repair feature coming soon')),
     );
   }
 
-  void _navigateToEditDamageReport(DamageReport report) {
-    // TODO: Implement edit damage report navigation
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Edit damage report feature coming soon')),
-    );
+  void _handleUnitAction(String action, Unit unit) {
+    switch (action) {
+      case 'edit':
+        _navigateToEditUnit(unit);
+        break;
+      case 'view':
+        _showUnitDetails(unit);
+        break;
+      case 'delete':
+        _showDeleteUnitDialog(unit);
+        break;
+    }
+  }
+
+  void _handleDamageAction(String action, DamageReport report) {
+    switch (action) {
+      case 'view':
+        _showDamageDetails(report);
+        break;
+      case 'edit':
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Edit damage report feature coming soon')),
+        );
+        break;
+      case 'delete':
+        _showDeleteDamageDialog(report);
+        break;
+    }
   }
 
   void _showUnitDetails(Unit unit) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Unit ${unit.unitId}'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF667eea), Color(0xFF764ba2)],
+                ),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Center(
+                child: Text(
+                  unit.unitId,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text('Unit ${unit.unitId}'),
+          ],
+        ),
         content: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -780,7 +1139,7 @@ class _UnitsScreenState extends State<UnitsScreen> with TickerProviderStateMixin
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
+            child: const Text('Close', style: TextStyle(color: Color(0xFF667eea))),
           ),
         ],
       ),
@@ -791,7 +1150,30 @@ class _UnitsScreenState extends State<UnitsScreen> with TickerProviderStateMixin
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Damage Report ${report.damageId}'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFf093fb), Color(0xFFf5576c)],
+                ),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Center(
+                child: Icon(
+                  Icons.report_problem_rounded,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text('Damage Report ${report.damageId}'),
+          ],
+        ),
         content: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -815,7 +1197,7 @@ class _UnitsScreenState extends State<UnitsScreen> with TickerProviderStateMixin
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
+            child: const Text('Close', style: TextStyle(color: Color(0xFF667eea))),
           ),
         ],
       ),
@@ -845,6 +1227,7 @@ class _UnitsScreenState extends State<UnitsScreen> with TickerProviderStateMixin
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Delete Unit'),
         content: Text('Are you sure you want to delete unit ${unit.unitId}? This action cannot be undone.'),
         actions: [
@@ -853,7 +1236,10 @@ class _UnitsScreenState extends State<UnitsScreen> with TickerProviderStateMixin
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
             onPressed: () async {
               await _unitService.deleteUnit(selectedRentalId!, unit.id);
               Navigator.pop(context);
@@ -873,15 +1259,19 @@ class _UnitsScreenState extends State<UnitsScreen> with TickerProviderStateMixin
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Delete Damage Report'),
-        content: Text('Are you sure you want to delete damage report ${report.damageId}? This action cannot be undone.'),
+        content: Text('Are you sure you want to delete this damage report? This action cannot be undone.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
             onPressed: () async {
               await _unitService.deleteDamageReport(selectedRentalId!, report.id);
               Navigator.pop(context);

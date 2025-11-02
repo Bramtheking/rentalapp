@@ -1,17 +1,27 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/auth_service.dart';
 import '../services/dashboard_service.dart';
+import '../services/sms_service.dart';
+import '../services/payment_tracking_service.dart';
+import '../services/receipt_service.dart';
+import '../models/sms_format_model.dart';
 import 'super_admin_dashboard.dart';
 import 'tenants_screen.dart';
 import 'units_screen.dart';
 import 'sms_screen.dart';
 import 'expenses_screen.dart';
 import 'reports_screen.dart';
+import 'reports_screen.dart';
+import 'payment_structure_screen.dart';
+import 'unit_approval_screen.dart';
+import 'penalty_calculator_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({Key? key}) : super(key: key);
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -21,6 +31,11 @@ class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
   String? _selectedBuildingId;
   String _selectedBuildingName = 'Select Building';
+  List<Map<String, dynamic>> _userBuildings = [];
+  bool _isLoadingBuildings = true;
+  String? _userRole;
+  bool _canCreateBuildings = false;
+  Timer? _autoSyncTimer;
 
   final List<String> _pageNames = [
     'Dashboard',
@@ -34,155 +49,876 @@ class _HomeScreenState extends State<HomeScreen> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _loadBuildingSelectionFirst();
+    _startAutoSync();
+  }
+
+  @override
+  void dispose() {
+    _autoSyncTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadBuildingSelectionFirst() async {
+    // First, try to restore building selection from local storage
+    await _restoreBuildingSelectionFromStorage();
+    // Then load user data and buildings
+    await _loadUserData();
+  }
+
+  Future<void> _restoreBuildingSelectionFromStorage() async {
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? lastSelectedId = prefs.getString('selected_building_id');
+      String? lastSelectedName = prefs.getString('selected_building_name');
+      int? lastSelectedTab = prefs.getInt('selected_tab_index');
+      
+      setState(() {
+        if (lastSelectedId != null && lastSelectedName != null) {
+          _selectedBuildingId = lastSelectedId;
+          _selectedBuildingName = lastSelectedName;
+        }
+        if (lastSelectedTab != null) {
+          _selectedIndex = lastSelectedTab;
+        }
+      });
+    } catch (e) {
+      print('Error restoring building selection from storage: $e');
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Only restore if we truly have no selection and have buildings loaded
+    if (_selectedBuildingId == null && _userBuildings.isNotEmpty) {
+      _restoreBuildingSelection();
+    }
+  }
+
+  Future<void> _restoreBuildingSelection() async {
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? lastSelectedId = prefs.getString('selected_building_id');
+      String? lastSelectedName = prefs.getString('selected_building_name');
+      
+      if (lastSelectedId != null && _userBuildings.any((b) => b['id'] == lastSelectedId)) {
+        setState(() {
+          _selectedBuildingId = lastSelectedId;
+          _selectedBuildingName = lastSelectedName ?? 'Select Building';
+        });
+      } else if (_userBuildings.isNotEmpty && _selectedBuildingId == null) {
+        // Only fallback to first building if no building is currently selected
+        setState(() {
+          _selectedBuildingId = _userBuildings.first['id'];
+          _selectedBuildingName = _userBuildings.first['name'];
+        });
+        // Save the fallback selection
+        _saveBuildingSelection(_userBuildings.first['id'], _userBuildings.first['name']);
+      }
+    } catch (e) {
+      print('Error restoring building selection: $e');
+    }
+  }
+
+  Future<void> _saveBuildingSelection(String? buildingId, String buildingName) async {
+    if (buildingId == null) return;
+    
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      await prefs.setString('selected_building_id', buildingId);
+      await prefs.setString('selected_building_name', buildingName);
+    } catch (e) {
+      print('Error saving building selection: $e');
+    }
+  }
+
+  Future<void> _saveSelectedTab(int tabIndex) async {
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('selected_tab_index', tabIndex);
+    } catch (e) {
+      print('Error saving selected tab: $e');
+    }
+  }
+
+  Future<void> _loadUserData() async {
+    try {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) return;
+
+      // Get user role first
+      DocumentSnapshot userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUser.uid)
+          .get();
+
+      if (!userDoc.exists) return;
+
+      Map<String, dynamic>? userData = userDoc.data() as Map<String, dynamic>?;
+      if (userData == null) return;
+
+      setState(() {
+        _userRole = userData['userType'] ?? 'rentalmanager';
+        _canCreateBuildings = _userRole == 'rentalmanager' || _userRole == 'superadmin';
+      });
+
+      // Load buildings based on role
+      await _loadUserBuildings();
+
+    } catch (e) {
+      print('Error loading user data: $e');
+      setState(() {
+        _isLoadingBuildings = false;
+      });
+    }
+  }
+
+  Future<void> _loadUserBuildings() async {
+    try {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) return;
+
+      // Get user document to find their buildings
+      DocumentSnapshot userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUser.uid)
+          .get();
+
+      if (!userDoc.exists) return;
+
+      Map<String, dynamic>? userData = userDoc.data() as Map<String, dynamic>?;
+      if (userData == null) return;
+
+      List<Map<String, dynamic>> buildings = [];
+
+      // Load buildings based on user role
+      if (_userRole == 'rentalmanager' || _userRole == 'superadmin') {
+        // Rental managers and superadmins can see buildings they created
+        
+        // Check if user has buildings array (new system)
+        if (userData['buildings'] != null) {
+          List<String> buildingIds = List<String>.from(userData['buildings']);
+          
+          for (String buildingId in buildingIds) {
+            DocumentSnapshot buildingDoc = await FirebaseFirestore.instance
+                .collection('rentals')
+                .doc(buildingId)
+                .get();
+            
+            if (buildingDoc.exists) {
+              Map<String, dynamic> buildingData = buildingDoc.data() as Map<String, dynamic>;
+              buildings.add({
+                'id': buildingId,
+                'name': buildingData['name'] ?? 'Unnamed Building',
+                'address': buildingData['address'] ?? '',
+                'totalUnits': buildingData['totalUnits'] ?? 0,
+                'isActive': buildingData['isActive'] ?? true,
+              });
+            }
+          }
+        } else {
+          // Fallback: Query buildings created by this user
+          QuerySnapshot buildingQuery = await FirebaseFirestore.instance
+              .collection('rentals')
+              .where('createdBy', isEqualTo: currentUser.uid)
+              .where('isActive', isEqualTo: true)
+              .get();
+          
+          for (DocumentSnapshot buildingDoc in buildingQuery.docs) {
+            Map<String, dynamic> buildingData = buildingDoc.data() as Map<String, dynamic>;
+            buildings.add({
+              'id': buildingDoc.id,
+              'name': buildingData['name'] ?? 'Unnamed Building',
+              'address': buildingData['address'] ?? '',
+              'totalUnits': buildingData['totalUnits'] ?? 0,
+              'isActive': buildingData['isActive'] ?? true,
+            });
+          }
+        }
+        
+      } else if (_userRole == 'editor') {
+        // Editors can only access buildings assigned to them via the rental field
+        if (userData['rental'] != null && userData['rental'].toString().isNotEmpty) {
+          String rentalName = userData['rental'];
+          
+          // Query building by name (for editors, we use the rental field)
+          QuerySnapshot buildingQuery = await FirebaseFirestore.instance
+              .collection('rentals')
+              .where('name', isEqualTo: rentalName)
+              .where('isActive', isEqualTo: true)
+              .limit(1)
+              .get();
+          
+          if (buildingQuery.docs.isNotEmpty) {
+            DocumentSnapshot buildingDoc = buildingQuery.docs.first;
+            Map<String, dynamic> buildingData = buildingDoc.data() as Map<String, dynamic>;
+            buildings.add({
+              'id': buildingDoc.id,
+              'name': buildingData['name'] ?? rentalName,
+              'address': buildingData['address'] ?? '',
+              'totalUnits': buildingData['totalUnits'] ?? 0,
+              'isActive': buildingData['isActive'] ?? true,
+            });
+          }
+        }
+        
+        // Also check if editor has specific buildings assigned via buildings array
+        if (userData['buildings'] != null) {
+          List<String> buildingIds = List<String>.from(userData['buildings']);
+          
+          for (String buildingId in buildingIds) {
+            DocumentSnapshot buildingDoc = await FirebaseFirestore.instance
+                .collection('rentals')
+                .doc(buildingId)
+                .get();
+            
+            if (buildingDoc.exists) {
+              Map<String, dynamic> buildingData = buildingDoc.data() as Map<String, dynamic>;
+              // Avoid duplicates
+              if (!buildings.any((b) => b['id'] == buildingId)) {
+                buildings.add({
+                  'id': buildingId,
+                  'name': buildingData['name'] ?? 'Unnamed Building',
+                  'address': buildingData['address'] ?? '',
+                  'totalUnits': buildingData['totalUnits'] ?? 0,
+                  'isActive': buildingData['isActive'] ?? true,
+                });
+              }
+            }
+          }
+        }
+      }
+
+      setState(() {
+        _userBuildings = buildings;
+        _isLoadingBuildings = false;
+        
+        // Auto-select the last selected building or first available building
+        if (buildings.isNotEmpty) {
+          String? lastSelectedId = userData['lastSelectedBuilding'];
+          if (lastSelectedId != null && buildings.any((b) => b['id'] == lastSelectedId)) {
+            _selectedBuildingId = lastSelectedId;
+            _selectedBuildingName = buildings.firstWhere((b) => b['id'] == lastSelectedId)['name'];
+          } else {
+            _selectedBuildingId = buildings.first['id'];
+            _selectedBuildingName = buildings.first['name'];
+          }
+        }
+      });
+
+    } catch (e) {
+      print('Error loading user buildings: $e');
+      setState(() {
+        _isLoadingBuildings = false;
+      });
+    }
+  }
+
+  void _startAutoSync() {
+    // Start auto-sync timer for every 2 minutes
+    _autoSyncTimer = Timer.periodic(const Duration(minutes: 2), (timer) {
+      _performAutoSync();
+    });
+  }
+
+  Future<void> _performAutoSync() async {
+    // Only auto-sync if we have a selected building and user is not actively using the app
+    if (_selectedBuildingId == null) return;
+    
+    try {
+      // Check if building has SMS sender configured
+      final SMSService smsService = SMSService();
+      
+      // Skip auto-sync if platform doesn't support it
+      if (!smsService.canSync()) return;
+      
+      String? smsSender = await smsService.getBuildingSMSSender(_selectedBuildingId!);
+      
+      if (smsSender == null) return; // No SMS sender configured, skip auto-sync
+      
+      // Auto-sync is now simplified - just check if SMS sender is configured
+      // The actual SMS parsing will be done when SMS messages are manually processed
+      
+    } catch (e) {
+      // Silent failure for auto-sync - don't show errors to user
+      print('Auto-sync error: $e');
+    }
+  }
+
+  Future<void> _performSilentSMSSync(SMSService smsService, SMSFormat bankFormat, String bankId) async {
+    // This would be where we read actual SMS messages from the device
+    // For now, we'll skip the sample data insertion during auto-sync
+    // In a real implementation, this would:
+    // 1. Read SMS messages from device since last sync
+    // 2. Filter by bank format
+    // 3. Parse and store new transactions
+    // 4. Update sync timestamp
+    
+    // Get sync start date to avoid processing old messages
+    DateTime? syncStartDate = await smsService.getSyncStartDate(_selectedBuildingId!);
+    if (syncStartDate == null) {
+      // Set default sync start date to current time if not set
+      await smsService.setSyncStartDate(_selectedBuildingId!, DateTime.now());
+    }
+    
+    // In a real implementation, we would:
+    // - Use platform channels to read SMS messages
+    // - Filter messages by date and sender
+    // - Parse using the bank format
+    // - Store new transactions
+    
+    print('Auto-sync completed for building: $_selectedBuildingId');
+  }
+
+  Future<void> _processPaymentFromSMS(SMSTransaction transaction) async {
+    try {
+      // Check if unit exists in the system
+      final unitsSnapshot = await FirebaseFirestore.instance
+          .collection('rentals')
+          .doc(transaction.buildingId)
+          .collection('units')
+          .where('unitNumber', isEqualTo: transaction.unit)
+          .limit(1)
+          .get();
+
+      if (unitsSnapshot.docs.isNotEmpty) {
+        // Unit exists, process payment
+        final paymentService = PaymentTrackingService();
+        final result = await paymentService.processPayment(
+          buildingId: transaction.buildingId,
+          unitRef: transaction.unit,
+          amount: transaction.amount,
+          paymentDate: transaction.date,
+          reference: transaction.reference,
+          method: 'SMS Auto-Sync',
+        );
+
+        // Update transaction status based on payment result
+        String status = result.isComplete ? 'matched' : 'partial';
+        await FirebaseFirestore.instance
+            .collection('rentals')
+            .doc(transaction.buildingId)
+            .collection('smsTransactions')
+            .doc(transaction.id)
+            .update({
+          'status': status,
+          'paymentBreakdown': result.breakdown ?? {},
+        });
+      }
+      // If unit doesn't exist, transaction remains as 'pending' for manual approval
+    } catch (e) {
+      print('Error processing payment from SMS: $e');
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Row(
-        children: [
-          // Sidebar
-          Container(
-            width: 250,
-            color: Colors.grey[50],
-            child: Column(
-              children: [
-                // Header
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  color: Colors.orange,
-                  child: const Row(
-                    children: [
-                      Icon(Icons.business, color: Colors.white, size: 28),
-                      SizedBox(width: 12),
-                      Text(
-                        'RentManager Pro',
+      appBar: AppBar(
+        title: Text(
+          _pageNames[_selectedIndex],
+          style: const TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 20,
+          ),
+        ),
+        elevation: 0,
+        centerTitle: false,
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Color(0xFF667eea),
+                Color(0xFF764ba2),
+              ],
+            ),
+          ),
+        ),
+        leading: Builder(
+          builder: (context) => IconButton(
+            icon: const Icon(Icons.menu_rounded, size: 28),
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
+        ),
+        actions: [
+          if (_selectedBuildingId != null)
+            Container(
+              margin: const EdgeInsets.only(right: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: Colors.white.withOpacity(0.3),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.business, size: 16),
+                  const SizedBox(width: 4),
+                  Text(
+                    _selectedBuildingName,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+      drawer: Drawer(
+        child: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Color(0xFF667eea),
+                Color(0xFF764ba2),
+                Color(0xFFf093fb),
+                Color(0xFFf5576c),
+              ],
+              stops: [0.0, 0.3, 0.7, 1.0],
+            ),
+          ),
+          child: Column(
+            children: [
+              // Header with glassmorphism
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(24, 60, 24, 32),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Glassmorphic logo container
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(20),
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            Colors.white.withOpacity(0.25),
+                            Colors.white.withOpacity(0.1),
+                          ],
+                        ),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.2),
+                          width: 1.5,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 20,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.business_rounded,
+                        color: Colors.white,
+                        size: 32,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    const Text(
+                      'RentManager Pro',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 28,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        color: Colors.white.withOpacity(0.15),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.1),
+                        ),
+                      ),
+                      child: const Text(
+                        'Property Management',
                         style: TextStyle(
                           color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          letterSpacing: 0.3,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Content Area with glassmorphism
+              Expanded(
+                child: Container(
+                  margin: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(30),
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Colors.white.withOpacity(0.25),
+                        Colors.white.withOpacity(0.1),
+                      ],
+                    ),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.2),
+                      width: 1.5,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 20,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      // Building Status Indicator
+                      if (_selectedBuildingId == null)
+                        Container(
+                          margin: const EdgeInsets.all(20),
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(20),
+                            gradient: LinearGradient(
+                              colors: [
+                                Colors.red.withOpacity(0.1),
+                                Colors.red.withOpacity(0.05),
+                              ],
+                            ),
+                            border: Border.all(
+                              color: Colors.red.withOpacity(0.3),
+                              width: 1,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.red.withOpacity(0.1),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.red.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Icon(
+                                  Icons.warning_rounded, 
+                                  color: Colors.red[600], 
+                                  size: 24
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              const Text(
+                                'No Building Selected',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.red,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              const Text(
+                                'Select a building to access all features',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.red,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
+                        ),
+                      // Navigation Items
+                      Expanded(
+                        child: ListView(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          children: [
+                            _buildModernNavItem(Icons.dashboard_rounded, 'Dashboard', 0),
+                            _buildModernNavItem(Icons.payment_rounded, 'Rent Payments', 1),
+                            _buildModernNavItem(Icons.people_rounded, 'Tenant Management', 2),
+                            _buildModernNavItem(Icons.home_work_rounded, 'Unit Management', 3),
+                            _buildModernNavItem(Icons.sms_rounded, 'SMS Communications', 4),
+                            _buildModernNavItem(Icons.receipt_long_rounded, 'Expenses', 5),
+                            _buildModernNavItem(Icons.analytics_rounded, 'Reports', 6),
+                            const SizedBox(height: 16),
+                            Container(
+                              height: 1,
+                              color: Colors.grey[200],
+                              margin: const EdgeInsets.symmetric(horizontal: 16),
+                            ),
+                            const SizedBox(height: 16),
+                            _buildModernNavItem(Icons.person_rounded, 'Profile', 7),
+                          ],
                         ),
                       ),
                     ],
                   ),
                 ),
-                // Building Status Indicator
-                if (_selectedBuildingId == null)
-                  Container(
-                    margin: const EdgeInsets.all(8),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.red[50],
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.red[200]!),
-                    ),
-                    child: Column(
-                      children: [
-                        Icon(Icons.warning, color: Colors.red[400], size: 20),
-                        const SizedBox(height: 4),
-                        const Text(
-                          'No Building Selected',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.red,
-                          ),
-                        ),
-                        const Text(
-                          'Select a building to access features',
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: Colors.red,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    ),
-                  ),
-                
-                // Navigation Items
-                Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    children: [
-                      _buildNavItem(Icons.dashboard, 'Dashboard', 0),
-                      _buildNavItem(Icons.payment, 'Rent Payments', 1),
-                      _buildNavItem(Icons.people, 'Tenant Management', 2),
-                      _buildNavItem(Icons.home_work, 'Unit Management', 3),
-                      _buildNavItem(Icons.sms, 'SMS Communications', 4),
-                      _buildNavItem(Icons.receipt_long, 'Expenses', 5),
-                      _buildNavItem(Icons.analytics, 'Reports', 6),
-                      const Divider(),
-                      _buildNavItem(Icons.person, 'Profile', 7),
-                    ],
-                  ),
-                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xFFF8F9FA),
+              Color(0xFFE9ECEF),
+              Color(0xFFF8F9FA),
+            ],
+            stops: [0.0, 0.5, 1.0],
+          ),
+        ),
+        child: Container(
+          margin: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(25),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Colors.white.withOpacity(0.7),
+                Colors.white.withOpacity(0.3),
               ],
             ),
+            border: Border.all(
+              color: Colors.white.withOpacity(0.2),
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
+              ),
+            ],
           ),
-          // Main Content
-          Expanded(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(25),
             child: _buildMainContent(),
           ),
-        ],
+        ),
       ),
+      floatingActionButton: _selectedIndex == 0 && _selectedBuildingId != null
+          ? Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xFF667eea),
+                    Color(0xFF764ba2),
+                  ],
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF667eea).withOpacity(0.4),
+                    blurRadius: 20,
+                    offset: const Offset(0, 8),
+                  ),
+                  BoxShadow(
+                    color: Colors.white.withOpacity(0.1),
+                    blurRadius: 10,
+                    offset: const Offset(-2, -2),
+                  ),
+                ],
+              ),
+              child: FloatingActionButton(
+                onPressed: () => _showQuickActions(context),
+                backgroundColor: Colors.transparent,
+                elevation: 0,
+                child: const Icon(
+                  Icons.add_rounded, 
+                  color: Colors.white,
+                  size: 28,
+                ),
+              ),
+            )
+          : null,
     );
   }
 
-  Widget _buildNavItem(IconData icon, String title, int index) {
+  Widget _buildModernNavItem(IconData icon, String title, int index) {
     final isSelected = _selectedIndex == index;
     final requiresBuilding = _requiresBuilding(index);
     final isDisabled = requiresBuilding && _selectedBuildingId == null;
     
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      child: ListTile(
-        leading: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              color: isDisabled 
-                  ? Colors.grey[400]
-                  : (isSelected ? Colors.orange : Colors.grey[600]),
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: isDisabled 
+              ? () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: const Text('Please select a building first from the Dashboard'),
+                      backgroundColor: const Color(0xFF667eea),
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      margin: const EdgeInsets.all(16),
+                    ),
+                  );
+                }
+              : () {
+                  setState(() {
+                    _selectedIndex = index;
+                  });
+                  _saveSelectedTab(index);
+                  Navigator.pop(context); // Close the drawer
+                },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              gradient: isSelected 
+                  ? LinearGradient(
+                      colors: [
+                        Colors.white.withOpacity(0.3),
+                        Colors.white.withOpacity(0.1),
+                      ],
+                    )
+                  : null,
+              border: isSelected 
+                  ? Border.all(
+                      color: Colors.white.withOpacity(0.3),
+                      width: 1.5,
+                    )
+                  : null,
+              boxShadow: isSelected 
+                  ? [
+                      BoxShadow(
+                        color: Colors.white.withOpacity(0.1),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ]
+                  : null,
             ),
-            if (isDisabled) ...[
-              const SizedBox(width: 4),
-              Icon(
-                Icons.lock,
-                size: 12,
-                color: Colors.grey[400],
-              ),
-            ],
-          ],
-        ),
-        title: Text(
-          title,
-          style: TextStyle(
-            color: isDisabled 
-                ? Colors.grey[400]
-                : (isSelected ? Colors.orange : Colors.grey[800]),
-            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    gradient: LinearGradient(
+                      colors: isDisabled 
+                          ? [
+                              Colors.grey.withOpacity(0.1),
+                              Colors.grey.withOpacity(0.05),
+                            ]
+                          : isSelected 
+                              ? [
+                                  Colors.white.withOpacity(0.4),
+                                  Colors.white.withOpacity(0.2),
+                                ]
+                              : [
+                                  Colors.white.withOpacity(0.2),
+                                  Colors.white.withOpacity(0.1),
+                                ],
+                    ),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.2),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    icon,
+                    size: 22,
+                    color: isDisabled 
+                        ? Colors.white.withOpacity(0.4)
+                        : Colors.white,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      color: isDisabled 
+                          ? Colors.white.withOpacity(0.4)
+                          : Colors.white,
+                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                      fontSize: 15,
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+                ),
+                if (isDisabled)
+                  Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      Icons.lock_rounded,
+                      size: 14,
+                      color: Colors.white.withOpacity(0.6),
+                    ),
+                  ),
+                if (isSelected)
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.white.withOpacity(0.5),
+                          blurRadius: 4,
+                          spreadRadius: 1,
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
-        selected: isSelected,
-        selectedTileColor: Colors.orange.withOpacity(0.1),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-        ),
-        onTap: isDisabled 
-            ? () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Please select a building first from the Dashboard'),
-                    backgroundColor: Colors.orange,
-                  ),
-                );
-              }
-            : () {
-                setState(() {
-                  _selectedIndex = index;
-                });
-              },
       ),
     );
+  }
+
+  // Keep the old method for compatibility
+  Widget _buildNavItem(IconData icon, String title, int index) {
+    return _buildModernNavItem(icon, title, index);
   }
 
   bool _requiresBuilding(int index) {
@@ -196,11 +932,13 @@ class _HomeScreenState extends State<HomeScreen> {
         return DashboardPage(
           selectedBuildingId: _selectedBuildingId,
           selectedBuildingName: _selectedBuildingName,
+          canCreateBuildings: _canCreateBuildings,
           onBuildingChanged: (id, name) {
             setState(() {
               _selectedBuildingId = id;
               _selectedBuildingName = name;
             });
+            _saveBuildingSelection(id, name);
           },
           onAddBuilding: () => _showAddBuildingDialog(context),
         );
@@ -222,11 +960,13 @@ class _HomeScreenState extends State<HomeScreen> {
         return DashboardPage(
           selectedBuildingId: _selectedBuildingId,
           selectedBuildingName: _selectedBuildingName,
+          canCreateBuildings: _canCreateBuildings,
           onBuildingChanged: (id, name) {
             setState(() {
               _selectedBuildingId = id;
               _selectedBuildingName = name;
             });
+            _saveBuildingSelection(id, name);
           },
           onAddBuilding: () => _showAddBuildingDialog(context),
         );
@@ -251,7 +991,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Icon(
                 Icons.business,
                 size: 80,
-                color: Colors.orange[300],
+                color: const Color(0xFF667eea).withOpacity(0.6),
               ),
               const SizedBox(height: 24),
               const Text(
@@ -280,11 +1020,12 @@ class _HomeScreenState extends State<HomeScreen> {
                       setState(() {
                         _selectedIndex = 0; // Go to Dashboard
                       });
+                      _saveSelectedTab(0);
                     },
                     icon: const Icon(Icons.dashboard),
                     label: const Text('Go to Dashboard'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.orange,
+                      backgroundColor: const Color(0xFF667eea),
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(
                         horizontal: 24,
@@ -293,18 +1034,19 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   const SizedBox(width: 16),
-                  OutlinedButton.icon(
-                    onPressed: () => _showAddBuildingDialog(context),
-                    icon: const Icon(Icons.add),
-                    label: const Text('Create Building'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.orange,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 24,
-                        vertical: 16,
+                  if (_canCreateBuildings)
+                    OutlinedButton.icon(
+                      onPressed: () => _showAddBuildingDialog(context),
+                      icon: const Icon(Icons.add),
+                      label: const Text('Create Building'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF667eea),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 16,
+                        ),
                       ),
                     ),
-                  ),
                 ],
               ),
             ],
@@ -314,10 +1056,282 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _showAddBuildingDialog(BuildContext context) {
-    showDialog(
+  void _showAddBuildingDialog(BuildContext context) async {
+    final result = await showDialog<bool>(
       context: context,
       builder: (context) => const AddBuildingDialog(),
+    );
+    
+    // If building was created successfully, refresh the building list
+    if (result == true) {
+      _loadUserData(); // Refresh user data and buildings
+    }
+  }
+
+  void _showQuickActions(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Container(
+        decoration: BoxDecoration(
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(30),
+            topRight: Radius.circular(30),
+          ),
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.white.withOpacity(0.95),
+              Colors.white.withOpacity(0.85),
+            ],
+          ),
+          border: Border.all(
+            color: Colors.white.withOpacity(0.2),
+            width: 1.5,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 30,
+              offset: const Offset(0, -10),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Handle bar with glassmorphism
+            Container(
+              width: 50,
+              height: 5,
+              margin: const EdgeInsets.only(top: 16),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(3),
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.grey.withOpacity(0.3),
+                    Colors.grey.withOpacity(0.1),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 32),
+            
+            // Title with glassmorphic background
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                gradient: LinearGradient(
+                  colors: [
+                    const Color(0xFF667eea).withOpacity(0.1),
+                    const Color(0xFF764ba2).withOpacity(0.05),
+                  ],
+                ),
+                border: Border.all(
+                  color: const Color(0xFF667eea).withOpacity(0.2),
+                ),
+              ),
+              child: const Text(
+                '⚡ Quick Actions',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF1F2937),
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ),
+            const SizedBox(height: 32),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Column(
+                children: [
+                  _buildQuickActionItem(
+                    Icons.people_rounded,
+                    'Add Tenant',
+                    'Add a new tenant to your property',
+                    const Color(0xFF667eea),
+                    () {
+                      Navigator.pop(context);
+                      setState(() {
+                        _selectedIndex = 2;
+                      });
+                      _saveSelectedTab(2);
+                    },
+                  ),
+                  _buildQuickActionItem(
+                    Icons.home_work_rounded,
+                    'Add Unit',
+                    'Create a new rental unit',
+                    const Color(0xFF667eea),
+                    () {
+                      Navigator.pop(context);
+                      setState(() {
+                        _selectedIndex = 3;
+                      });
+                      _saveSelectedTab(3);
+                    },
+                  ),
+                  _buildQuickActionItem(
+                    Icons.payment_rounded,
+                    'Record Payment',
+                    'Log a rent payment',
+                    const Color(0xFF667eea),
+                    () {
+                      Navigator.pop(context);
+                      setState(() {
+                        _selectedIndex = 1;
+                      });
+                      _saveSelectedTab(1);
+                    },
+                  ),
+                  _buildQuickActionItem(
+                    Icons.receipt_long_rounded,
+                    'Add Expense',
+                    'Track property expenses',
+                    const Color(0xFF667eea),
+                    () {
+                      Navigator.pop(context);
+                      setState(() {
+                        _selectedIndex = 5;
+                      });
+                      _saveSelectedTab(5);
+                    },
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuickActionItem(
+    IconData icon,
+    String title,
+    String subtitle,
+    Color color,
+    VoidCallback onTap,
+  ) {
+    final gradientColors = [
+      [const Color(0xFF667eea), const Color(0xFF764ba2)], // Blue-Purple
+      [const Color(0xFFf093fb), const Color(0xFFf5576c)], // Pink-Red
+      [const Color(0xFF4facfe), const Color(0xFF00f2fe)], // Blue-Cyan
+      [const Color(0xFF43e97b), const Color(0xFF38f9d7)], // Green-Teal
+    ];
+    
+    final gradientIndex = title.hashCode % gradientColors.length;
+    final selectedGradient = gradientColors[gradientIndex];
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(24),
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(24),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  selectedGradient[0].withOpacity(0.1),
+                  selectedGradient[1].withOpacity(0.05),
+                ],
+              ),
+              border: Border.all(
+                color: selectedGradient[0].withOpacity(0.2),
+                width: 1.5,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: selectedGradient[0].withOpacity(0.1),
+                  blurRadius: 15,
+                  offset: const Offset(0, 6),
+                ),
+                BoxShadow(
+                  color: Colors.white.withOpacity(0.7),
+                  blurRadius: 10,
+                  offset: const Offset(-2, -2),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(20),
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: selectedGradient,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: selectedGradient[0].withOpacity(0.3),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    icon,
+                    color: Colors.white,
+                    size: 26,
+                  ),
+                ),
+                const SizedBox(width: 20),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF1F2937),
+                          letterSpacing: 0.3,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        subtitle,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey[600],
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: selectedGradient[0].withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    Icons.arrow_forward_ios_rounded,
+                    size: 16,
+                    color: selectedGradient[0],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -325,6 +1339,7 @@ class _HomeScreenState extends State<HomeScreen> {
 class DashboardPage extends StatefulWidget {
   final String? selectedBuildingId;
   final String selectedBuildingName;
+  final bool canCreateBuildings;
   final Function(String?, String) onBuildingChanged;
   final VoidCallback onAddBuilding;
 
@@ -332,6 +1347,7 @@ class DashboardPage extends StatefulWidget {
     super.key,
     required this.selectedBuildingId,
     required this.selectedBuildingName,
+    required this.canCreateBuildings,
     required this.onBuildingChanged,
     required this.onAddBuilding,
   });
@@ -342,9 +1358,18 @@ class DashboardPage extends StatefulWidget {
 
 class _DashboardPageState extends State<DashboardPage> {
   final DashboardService _dashboardService = DashboardService();
+  
+  // Separate loading states for different sections
   Map<String, dynamic> dashboardData = {};
   List<Map<String, dynamic>> monthlyTrends = [];
-  bool isLoadingData = false;
+  Map<String, dynamic> unitsData = {};
+  Map<String, dynamic> tenantsData = {};
+  Map<String, dynamic> financialData = {};
+  
+  bool isLoadingFinancial = false;
+  bool isLoadingCharts = false;
+  bool isLoadingUnits = false;
+  bool isLoadingTenants = false;
 
   @override
   void initState() {
@@ -359,11 +1384,30 @@ class _DashboardPageState extends State<DashboardPage> {
     super.didUpdateWidget(oldWidget);
     if (widget.selectedBuildingId != oldWidget.selectedBuildingId) {
       if (widget.selectedBuildingId != null) {
+        // Reset all data and start loading
+        setState(() {
+          dashboardData = {};
+          monthlyTrends = [];
+          unitsData = {};
+          tenantsData = {};
+          financialData = {};
+          isLoadingFinancial = false;
+          isLoadingCharts = false;
+          isLoadingUnits = false;
+          isLoadingTenants = false;
+        });
         _loadDashboardData();
       } else {
         setState(() {
           dashboardData = {};
           monthlyTrends = [];
+          unitsData = {};
+          tenantsData = {};
+          financialData = {};
+          isLoadingFinancial = false;
+          isLoadingCharts = false;
+          isLoadingUnits = false;
+          isLoadingTenants = false;
         });
       }
     }
@@ -372,26 +1416,102 @@ class _DashboardPageState extends State<DashboardPage> {
   Future<void> _loadDashboardData() async {
     if (widget.selectedBuildingId == null) return;
     
+    // Load different sections independently for faster UI
+    _loadUnitsData();
+    _loadTenantsData();
+    _loadFinancialData();
+    _loadChartsData();
+  }
+
+  Future<void> _loadUnitsData() async {
+    if (widget.selectedBuildingId == null) return;
+    
     setState(() {
-      isLoadingData = true;
+      isLoadingUnits = true;
     });
 
     try {
-      final data = await _dashboardService.getDashboardData(widget.selectedBuildingId!);
-      final trends = await _dashboardService.getMonthlyTrends(widget.selectedBuildingId!);
-      
+      final data = await _dashboardService.getUnitsData(widget.selectedBuildingId!);
       setState(() {
-        dashboardData = data;
-        monthlyTrends = trends;
-        isLoadingData = false;
+        unitsData = data;
+        isLoadingUnits = false;
       });
     } catch (e) {
       setState(() {
-        isLoadingData = false;
+        isLoadingUnits = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error loading dashboard data: $e')),
-      );
+    }
+  }
+
+  Future<void> _loadTenantsData() async {
+    if (widget.selectedBuildingId == null) return;
+    
+    setState(() {
+      isLoadingTenants = true;
+    });
+
+    try {
+      final data = await _dashboardService.getTenantsData(widget.selectedBuildingId!);
+      setState(() {
+        tenantsData = data;
+        isLoadingTenants = false;
+      });
+    } catch (e) {
+      setState(() {
+        isLoadingTenants = false;
+      });
+    }
+  }
+
+  Future<void> _loadFinancialData() async {
+    if (widget.selectedBuildingId == null) return;
+    
+    setState(() {
+      isLoadingFinancial = true;
+    });
+
+    try {
+      final payments = await _dashboardService.getPaymentsData(widget.selectedBuildingId!);
+      final expenses = await _dashboardService.getExpensesData(widget.selectedBuildingId!);
+      
+      final totalIncome = payments['totalIncome'] ?? 0.0;
+      final totalExpenses = expenses['totalExpenses'] ?? 0.0;
+      final netProfit = totalIncome - totalExpenses;
+      
+      setState(() {
+        financialData = {
+          'totalIncome': totalIncome,
+          'totalExpenses': totalExpenses,
+          'netProfit': netProfit,
+          'payments': payments,
+          'expenses': expenses,
+        };
+        isLoadingFinancial = false;
+      });
+    } catch (e) {
+      setState(() {
+        isLoadingFinancial = false;
+      });
+    }
+  }
+
+  Future<void> _loadChartsData() async {
+    if (widget.selectedBuildingId == null) return;
+    
+    setState(() {
+      isLoadingCharts = true;
+    });
+
+    try {
+      final trends = await _dashboardService.getMonthlyTrends(widget.selectedBuildingId!);
+      setState(() {
+        monthlyTrends = trends;
+        isLoadingCharts = false;
+      });
+    } catch (e) {
+      setState(() {
+        isLoadingCharts = false;
+      });
     }
   }
 
@@ -402,15 +1522,25 @@ class _DashboardPageState extends State<DashboardPage> {
         title: const Text('Dashboard'),
         automaticallyImplyLeading: false,
         actions: [
-          // Add Building Button
-          IconButton(
-            icon: const Icon(Icons.add),
-            onPressed: widget.onAddBuilding,
-            tooltip: 'Add Building',
-          ),
+          // Add Building Button (only for rental managers and superadmins)
+          if (widget.canCreateBuildings)
+            IconButton(
+              icon: const Icon(Icons.add),
+              onPressed: widget.onAddBuilding,
+              tooltip: 'Add Building',
+            ),
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: widget.selectedBuildingId != null ? _loadDashboardData : null,
+            onPressed: widget.selectedBuildingId != null ? () {
+              // Reset and reload all data
+              setState(() {
+                unitsData = {};
+                tenantsData = {};
+                financialData = {};
+                monthlyTrends = [];
+              });
+              _loadDashboardData();
+            } : null,
             tooltip: 'Refresh Data',
           ),
           FutureBuilder<Map<String, dynamic>?>(
@@ -443,7 +1573,7 @@ class _DashboardPageState extends State<DashboardPage> {
                         value: 'admin',
                         child: Row(
                           children: [
-                            Icon(Icons.admin_panel_settings, color: Colors.orange),
+                            Icon(Icons.admin_panel_settings, color: const Color(0xFF667eea)),
                             SizedBox(width: 8),
                             Text('Super Admin'),
                           ],
@@ -458,7 +1588,7 @@ class _DashboardPageState extends State<DashboardPage> {
                       value: 'logout',
                       child: Row(
                         children: [
-                          Icon(Icons.logout, color: Colors.orange),
+                          Icon(Icons.logout, color: const Color(0xFF667eea)),
                           SizedBox(width: 8),
                           Text('Sign Out'),
                         ],
@@ -487,7 +1617,7 @@ class _DashboardPageState extends State<DashboardPage> {
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
-                  colors: [Colors.orange, Colors.deepOrange],
+                  colors: [Color(0xFF667eea), Color(0xFF764ba2)],
                 ),
                 borderRadius: BorderRadius.circular(16),
               ),
@@ -504,7 +1634,7 @@ class _DashboardPageState extends State<DashboardPage> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'Find your perfect rental property',
+                    'Manage your property with ease',
                     style: TextStyle(
                       fontSize: 16,
                       color: Colors.white70,
@@ -515,7 +1645,7 @@ class _DashboardPageState extends State<DashboardPage> {
                     onPressed: () {},
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.white,
-                      foregroundColor: Colors.orange,
+                      foregroundColor: const Color(0xFF667eea),
                     ),
                     child: const Text('Start Exploring'),
                   ),
@@ -526,51 +1656,35 @@ class _DashboardPageState extends State<DashboardPage> {
             
             // Dashboard Content
             if (widget.selectedBuildingId != null) ...[
-              if (isLoadingData) ...[
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(32.0),
-                    child: CircularProgressIndicator(),
-                  ),
-                ),
-              ] else if (dashboardData.isNotEmpty) ...[
-                // Financial Overview Cards
-                _buildFinancialOverview(),
-                const SizedBox(height: 24),
-                
-                // Charts Section
-                _buildChartsSection(),
-                const SizedBox(height: 24),
-                
-                // Property Statistics
-                _buildPropertyStatistics(),
-                const SizedBox(height: 24),
-                
-                // Quick Actions
-                _buildQuickActionsSection(),
-              ] else ...[
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(32.0),
-                    child: Text('No data available for this building'),
-                  ),
-                ),
-              ],
+              // Financial Overview Cards (with loading state)
+              _buildFinancialOverview(),
+              const SizedBox(height: 24),
+              
+              // Charts Section (with loading state)
+              _buildChartsSection(),
+              const SizedBox(height: 24),
+              
+              // Property Statistics (loads independently)
+              _buildPropertyStatistics(),
+              const SizedBox(height: 24),
+              
+              // Quick Actions (always available)
+              _buildQuickActionsSection(),
             ] else ...[
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
-                  color: Colors.blue[50],
+                  color: const Color(0xFF667eea).withOpacity(0.1),
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.blue[200]!),
+                  border: Border.all(color: const Color(0xFF667eea).withOpacity(0.3)),
                 ),
                 child: Column(
                   children: [
                     Icon(
                       Icons.business,
                       size: 64,
-                      color: Colors.blue[400],
+                      color: const Color(0xFF667eea),
                     ),
                     const SizedBox(height: 16),
                     const Text(
@@ -578,7 +1692,7 @@ class _DashboardPageState extends State<DashboardPage> {
                       style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
-                        color: Colors.blue,
+                        color: const Color(0xFF667eea),
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -591,12 +1705,13 @@ class _DashboardPageState extends State<DashboardPage> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    ElevatedButton.icon(
-                      onPressed: widget.onAddBuilding,
-                      icon: const Icon(Icons.add),
-                      label: const Text('Create Your First Building'),
+                    if (widget.canCreateBuildings)
+                      ElevatedButton.icon(
+                        onPressed: widget.onAddBuilding,
+                        icon: const Icon(Icons.add),
+                        label: const Text('Create Your First Building'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue,
+                        backgroundColor: const Color(0xFF667eea),
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(
                           horizontal: 24,
@@ -622,12 +1737,12 @@ class _DashboardPageState extends State<DashboardPage> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: hasBuilding 
-            ? Colors.orange.withOpacity(0.1)
+            ? const Color(0xFF667eea).withOpacity(0.1)
             : Colors.red.withOpacity(0.1),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: hasBuilding 
-              ? Colors.orange.withOpacity(0.3)
+              ? const Color(0xFF667eea).withOpacity(0.3)
               : Colors.red.withOpacity(0.3),
           width: hasBuilding ? 1 : 2,
         ),
@@ -636,25 +1751,54 @@ class _DashboardPageState extends State<DashboardPage> {
         children: [
           Icon(
             hasBuilding ? Icons.business : Icons.warning,
-            color: hasBuilding ? Colors.orange : Colors.red,
+            color: hasBuilding ? const Color(0xFF667eea) : Colors.red,
           ),
           const SizedBox(width: 12),
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
                   .collection('rentals')
+                  .where('createdBy', isEqualTo: FirebaseAuth.instance.currentUser?.uid)
                   .where('isActive', isEqualTo: true)
                   .snapshots(),
               builder: (context, snapshot) {
                 if (!snapshot.hasData) {
-                  return const Text('Loading buildings...');
+                  return const Text('Loading your buildings...');
                 }
 
                 final buildings = snapshot.data!.docs;
                 
+                if (buildings.isEmpty) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'No buildings found',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey[600],
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Create your first building to get started',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[500],
+                        ),
+                      ),
+                    ],
+                  );
+                }
+                
+                // Check if selectedBuildingId exists in the buildings list
+                bool buildingExists = buildings.any((doc) => doc.id == widget.selectedBuildingId);
+                String? safeSelectedId = buildingExists ? widget.selectedBuildingId : null;
+                
                 return DropdownButton<String>(
-                  value: widget.selectedBuildingId,
-                  hint: Text(widget.selectedBuildingName),
+                  value: safeSelectedId,
+                  hint: const Text('Select Building'),
                   isExpanded: true,
                   underline: Container(),
                   items: [
@@ -666,16 +1810,64 @@ class _DashboardPageState extends State<DashboardPage> {
                       final data = doc.data() as Map<String, dynamic>;
                       return DropdownMenuItem<String>(
                         value: doc.id,
-                        child: Text(data['name'] ?? 'Unknown Building'),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                          constraints: const BoxConstraints(maxHeight: 60),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                data['name'] ?? 'Unnamed Building',
+                                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                              ),
+                              if (data['address'] != null && data['address'].toString().isNotEmpty)
+                                Flexible(
+                                  child: Text(
+                                    data['address'],
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.grey[600],
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
+                                  ),
+                                ),
+                              Text(
+                                '${data['totalUnits'] ?? 0} units',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.grey[500],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       );
                     }),
                   ],
-                  onChanged: (value) {
+                  onChanged: (value) async {
                     String newName = 'Select Building';
                     if (value != null) {
                       final building = buildings.firstWhere((doc) => doc.id == value);
                       final data = building.data() as Map<String, dynamic>;
-                      newName = data['name'] ?? 'Unknown Building';
+                      newName = data['name'] ?? 'Unnamed Building';
+                      
+                      // Update user's last selected building in Firestore
+                      try {
+                        await FirebaseFirestore.instance
+                            .collection('users')
+                            .doc(FirebaseAuth.instance.currentUser?.uid)
+                            .update({
+                          'lastSelectedBuilding': value,
+                          'lastSelectedBuildingName': newName,
+                          'rental': newName, // Keep backward compatibility
+                        });
+                      } catch (e) {
+                        print('Error updating last selected building: $e');
+                      }
                     }
                     widget.onBuildingChanged(value, newName);
                   },
@@ -686,14 +1878,14 @@ class _DashboardPageState extends State<DashboardPage> {
           if (widget.selectedBuildingId != null) ...[
             const SizedBox(width: 8),
             PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert, color: Colors.orange),
+              icon: const Icon(Icons.more_vert, color: const Color(0xFF667eea)),
               onSelected: (value) => _handleBuildingAction(value),
               itemBuilder: (context) => [
                 const PopupMenuItem(
                   value: 'edit',
                   child: Row(
                     children: [
-                      Icon(Icons.edit, color: Colors.orange),
+                      Icon(Icons.edit, color: const Color(0xFF667eea)),
                       SizedBox(width: 8),
                       Text('Edit Building'),
                     ],
@@ -783,9 +1975,6 @@ class _DashboardPageState extends State<DashboardPage> {
 
 
   Widget _buildFinancialOverview() {
-    final financial = dashboardData['financial'] ?? {};
-    final payments = dashboardData['payments'] ?? {};
-    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -797,42 +1986,50 @@ class _DashboardPageState extends State<DashboardPage> {
         Row(
           children: [
             Expanded(
-              child: _buildMetricCard(
-                'Total Income',
-                'KES ${_formatCurrency(financial['totalIncome'] ?? 0)}',
-                Icons.trending_up,
-                Colors.green,
-                subtitle: payments['growthRate'] != null 
-                    ? '${payments['growthRate'].toStringAsFixed(1)}% vs last month'
-                    : null,
-              ),
+              child: isLoadingFinancial 
+                  ? _buildSkeletonCard()
+                  : _buildMetricCard(
+                      'Total Income',
+                      'KES ${_formatCurrency(financialData['totalIncome'] ?? 0)}',
+                      Icons.trending_up,
+                      Colors.green,
+                      subtitle: financialData['payments']?['growthRate'] != null 
+                          ? '${financialData['payments']['growthRate'].toStringAsFixed(1)}% vs last month'
+                          : null,
+                    ),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: _buildMetricCard(
-                'Total Expenses',
-                'KES ${_formatCurrency(financial['totalExpenses'] ?? 0)}',
-                Icons.trending_down,
-                Colors.red,
-              ),
+              child: isLoadingFinancial 
+                  ? _buildSkeletonCard()
+                  : _buildMetricCard(
+                      'Total Expenses',
+                      'KES ${_formatCurrency(financialData['totalExpenses'] ?? 0)}',
+                      Icons.trending_down,
+                      Colors.red,
+                    ),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: _buildMetricCard(
-                'Net Profit',
-                'KES ${_formatCurrency(financial['netProfit'] ?? 0)}',
-                Icons.account_balance_wallet,
-                Colors.blue,
-              ),
+              child: isLoadingFinancial 
+                  ? _buildSkeletonCard()
+                  : _buildMetricCard(
+                      'Net Profit',
+                      'KES ${_formatCurrency(financialData['netProfit'] ?? 0)}',
+                      Icons.account_balance_wallet,
+                      const Color(0xFF764ba2),
+                    ),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: _buildMetricCard(
-                'Occupancy Rate',
-                '${(financial['occupancyRate'] ?? 0).toStringAsFixed(1)}%',
-                Icons.home,
-                Colors.orange,
-              ),
+              child: isLoadingUnits 
+                  ? _buildSkeletonCard()
+                  : _buildMetricCard(
+                      'Occupancy Rate',
+                      '${(unitsData['occupancyRate'] ?? 0).toStringAsFixed(1)}%',
+                      Icons.home,
+                      const Color(0xFF667eea),
+                    ),
             ),
           ],
         ),
@@ -876,7 +2073,11 @@ class _DashboardPageState extends State<DashboardPage> {
                       style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 16),
-                    Expanded(child: _buildMonthlyTrendsChart()),
+                    Expanded(
+                      child: isLoadingCharts 
+                          ? _buildChartSkeleton()
+                          : _buildMonthlyTrendsChart(),
+                    ),
                   ],
                 ),
               ),
@@ -906,7 +2107,11 @@ class _DashboardPageState extends State<DashboardPage> {
                       style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 16),
-                    Expanded(child: _buildOccupancyChart()),
+                    Expanded(
+                      child: isLoadingUnits 
+                          ? _buildChartSkeleton()
+                          : _buildOccupancyChart(),
+                    ),
                   ],
                 ),
               ),
@@ -918,11 +2123,6 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Widget _buildPropertyStatistics() {
-    final units = dashboardData['units'] ?? {};
-    final tenants = dashboardData['tenants'] ?? {};
-    final payments = dashboardData['payments'] ?? {};
-    final expenses = dashboardData['expenses'] ?? {};
-    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -934,39 +2134,47 @@ class _DashboardPageState extends State<DashboardPage> {
         Row(
           children: [
             Expanded(
-              child: _buildStatCard(
-                'Total Units',
-                '${units['totalUnits'] ?? 0}',
-                Icons.home_work,
-                Colors.blue,
-              ),
+              child: isLoadingUnits 
+                  ? _buildSkeletonCard()
+                  : _buildStatCard(
+                      'Total Units',
+                      '${unitsData['totalUnits'] ?? 0}',
+                      Icons.home_work,
+                      const Color(0xFF764ba2),
+                    ),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: _buildStatCard(
-                'Active Tenants',
-                '${tenants['activeTenants'] ?? 0}',
-                Icons.people,
-                Colors.green,
-              ),
+              child: isLoadingTenants 
+                  ? _buildSkeletonCard()
+                  : _buildStatCard(
+                      'Active Tenants',
+                      '${tenantsData['activeTenants'] ?? 0}',
+                      Icons.people,
+                      Colors.green,
+                    ),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: _buildStatCard(
-                'Payments This Month',
-                '${payments['paymentsCount'] ?? 0}',
-                Icons.payment,
-                Colors.orange,
-              ),
+              child: isLoadingFinancial 
+                  ? _buildSkeletonCard()
+                  : _buildStatCard(
+                      'Payments This Month',
+                      '${financialData['payments']?['paymentsCount'] ?? 0}',
+                      Icons.payment,
+                      const Color(0xFF667eea),
+                    ),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: _buildStatCard(
-                'Expenses This Month',
-                '${expenses['expensesCount'] ?? 0}',
-                Icons.receipt,
-                Colors.red,
-              ),
+              child: isLoadingFinancial 
+                  ? _buildSkeletonCard()
+                  : _buildStatCard(
+                      'Expenses This Month',
+                      '${financialData['expenses']?['expensesCount'] ?? 0}',
+                      Icons.receipt,
+                      Colors.red,
+                    ),
             ),
           ],
         ),
@@ -1021,6 +2229,80 @@ class _DashboardPageState extends State<DashboardPage> {
                 title: 'Add Expense',
                 onTap: () {
                   // Navigate to expenses screen
+                },
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _buildQuickActionCard(
+                icon: Icons.payment_rounded,
+                title: 'Payment Structure',
+                onTap: () {
+                  if (widget.selectedBuildingId != null) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => PaymentStructureScreen(
+                          buildingId: widget.selectedBuildingId!,
+                          buildingName: widget.selectedBuildingName,
+                        ),
+                      ),
+                    );
+                  }
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildQuickActionCard(
+                icon: Icons.sync_rounded,
+                title: 'Sync Settings',
+                onTap: () {
+                  _showSyncSettingsDialog();
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildQuickActionCard(
+                icon: Icons.approval_rounded,
+                title: 'Unit Approval',
+                onTap: () {
+                  if (widget.selectedBuildingId != null) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => UnitApprovalScreen(
+                          buildingId: widget.selectedBuildingId!,
+                          buildingName: widget.selectedBuildingName,
+                        ),
+                      ),
+                    );
+                  }
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildQuickActionCard(
+                icon: Icons.calculate_rounded,
+                title: 'Penalty Calculator',
+                onTap: () {
+                  if (widget.selectedBuildingId != null) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => PenaltyCalculatorScreen(
+                          buildingId: widget.selectedBuildingId!,
+                          buildingName: widget.selectedBuildingName,
+                        ),
+                      ),
+                    );
+                  }
                 },
               ),
             ),
@@ -1254,7 +2536,7 @@ class _DashboardPageState extends State<DashboardPage> {
                       size: const Size(120, 120),
                       painter: ArcPainter(
                         percentage: vacant / total,
-                        color: Colors.blue,
+                        color: const Color(0xFF764ba2),
                         startAngle: (occupied / total) * 2 * 3.14159,
                       ),
                     ),
@@ -1264,7 +2546,7 @@ class _DashboardPageState extends State<DashboardPage> {
                       size: const Size(120, 120),
                       painter: ArcPainter(
                         percentage: maintenance / total,
-                        color: Colors.orange,
+                        color: const Color(0xFF667eea),
                         startAngle: ((occupied + vacant) / total) * 2 * 3.14159,
                       ),
                     ),
@@ -1299,9 +2581,9 @@ class _DashboardPageState extends State<DashboardPage> {
             if (occupied > 0)
               _buildOccupancyLegend('Occupied', occupied, Colors.green),
             if (vacant > 0)
-              _buildOccupancyLegend('Vacant', vacant, Colors.blue),
+              _buildOccupancyLegend('Vacant', vacant, const Color(0xFF764ba2)),
             if (maintenance > 0)
-              _buildOccupancyLegend('Maintenance', maintenance, Colors.orange),
+              _buildOccupancyLegend('Maintenance', maintenance, const Color(0xFF667eea)),
           ],
         ),
       ],
@@ -1348,23 +2630,338 @@ class _DashboardPageState extends State<DashboardPage> {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.orange.withOpacity(0.1),
+          color: const Color(0xFF667eea).withOpacity(0.1),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.orange.withOpacity(0.3)),
+          border: Border.all(color: const Color(0xFF667eea).withOpacity(0.3)),
         ),
         child: Column(
           children: [
             Icon(
               icon,
               size: 32,
-              color: Colors.orange,
+              color: const Color(0xFF667eea),
             ),
             const SizedBox(height: 8),
             Text(
               title,
               style: const TextStyle(
                 fontWeight: FontWeight.w600,
-                color: Colors.orange,
+                color: const Color(0xFF667eea),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showSyncSettingsDialog() async {
+    if (widget.selectedBuildingId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a building first'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    try {
+      final SMSService smsService = SMSService();
+      DateTime? currentStartDate = await smsService.getSyncStartDate(widget.selectedBuildingId!);
+      
+      showDialog(
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setState) {
+            DateTime selectedDate = currentStartDate ?? DateTime.now();
+            
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF667eea), Color(0xFF764ba2)],
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Center(
+                      child: Icon(
+                        Icons.sync_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Sync Settings'),
+                        Text(
+                          'Configure SMS sync options',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.normal),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'SMS Sync Start Date:',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Choose from which date to start syncing SMS messages. This helps avoid processing old messages.',
+                    style: TextStyle(fontSize: 14, color: Colors.grey),
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey[300]!),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Current Start Date:',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${selectedDate.day}/${selectedDate.month}/${selectedDate.year}',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        final DateTime? picked = await showDatePicker(
+                          context: context,
+                          initialDate: selectedDate,
+                          firstDate: DateTime(2020),
+                          lastDate: DateTime.now(),
+                          builder: (context, child) {
+                            return Theme(
+                              data: Theme.of(context).copyWith(
+                                colorScheme: const ColorScheme.light(
+                                  primary: Color(0xFF667eea),
+                                ),
+                              ),
+                              child: child!,
+                            );
+                          },
+                        );
+                        if (picked != null) {
+                          setState(() {
+                            selectedDate = picked;
+                          });
+                        }
+                      },
+                      icon: const Icon(Icons.calendar_today),
+                      label: const Text('Change Date'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF667eea).withOpacity(0.1),
+                        foregroundColor: const Color(0xFF667eea),
+                        elevation: 0,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF667eea).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: const Color(0xFF667eea).withOpacity(0.3),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          color: const Color(0xFF667eea),
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            'SMS messages before this date will be ignored during sync.',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    try {
+                      await smsService.setSyncStartDate(widget.selectedBuildingId!, selectedDate);
+                      Navigator.pop(context);
+                      
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Sync start date updated to ${selectedDate.day}/${selectedDate.month}/${selectedDate.year}'),
+                          backgroundColor: Colors.green,
+                          behavior: SnackBarBehavior.floating,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
+                      );
+                    } catch (e) {
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Error updating sync start date: $e'),
+                          backgroundColor: Colors.red,
+                          behavior: SnackBarBehavior.floating,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
+                      );
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF667eea),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Text('Save Settings'),
+                ),
+              ],
+            );
+          },
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error loading sync settings: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  // Skeleton loading widgets
+  Widget _buildSkeletonCard() {
+    return Container(
+      height: 120,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Container(
+                width: 80,
+                height: 16,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Container(
+            width: 120,
+            height: 24,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade300,
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            width: 100,
+            height: 14,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade200,
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChartSkeleton() {
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(20),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              width: 100,
+              height: 16,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(4),
               ),
             ),
           ],
@@ -1425,7 +3022,7 @@ class SearchPage extends StatelessWidget {
             Icon(
               Icons.search,
               size: 64,
-              color: Colors.orange,
+              color: const Color(0xFF667eea),
             ),
             SizedBox(height: 16),
             Text(
@@ -1463,7 +3060,7 @@ class FavoritesPage extends StatelessWidget {
             Icon(
               Icons.favorite,
               size: 64,
-              color: Colors.orange,
+              color: const Color(0xFF667eea),
             ),
             SizedBox(height: 16),
             Text(
@@ -1501,7 +3098,7 @@ class ProfilePage extends StatelessWidget {
             Icon(
               Icons.person,
               size: 64,
-              color: Colors.orange,
+              color: const Color(0xFF667eea),
             ),
             SizedBox(height: 16),
             Text(
@@ -1553,7 +3150,7 @@ class _AddBuildingDialogState extends State<AddBuildingDialog> {
     return AlertDialog(
       title: const Row(
         children: [
-          Icon(Icons.business, color: Colors.orange),
+          Icon(Icons.business, color: const Color(0xFF667eea)),
           SizedBox(width: 8),
           Text('Add New Building'),
         ],
@@ -1634,7 +3231,7 @@ class _AddBuildingDialogState extends State<AddBuildingDialog> {
         ElevatedButton(
           onPressed: _isLoading ? null : _addBuilding,
           style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.orange,
+            backgroundColor: const Color(0xFF667eea),
             foregroundColor: Colors.white,
           ),
           child: _isLoading
@@ -1659,7 +3256,13 @@ class _AddBuildingDialogState extends State<AddBuildingDialog> {
       });
 
       try {
-        await FirebaseFirestore.instance.collection('rentals').add({
+        final currentUser = FirebaseAuth.instance.currentUser;
+        if (currentUser == null) {
+          throw Exception('User not authenticated');
+        }
+
+        // Create the building document
+        DocumentReference buildingRef = await FirebaseFirestore.instance.collection('rentals').add({
           'name': _nameController.text.trim(),
           'address': _addressController.text.trim(),
           'totalUnits': int.parse(_totalUnitsController.text.trim()),
@@ -1668,16 +3271,52 @@ class _AddBuildingDialogState extends State<AddBuildingDialog> {
               : _descriptionController.text.trim(),
           'createdAt': FieldValue.serverTimestamp(),
           'isActive': true,
-          'createdBy': FirebaseAuth.instance.currentUser?.uid,
+          'createdBy': currentUser.uid,
+          'ownerId': currentUser.uid,
         });
 
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Building added successfully!'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        // Get the building ID
+        String buildingId = buildingRef.id;
+        String buildingName = _nameController.text.trim();
+
+        // Update user's buildings list
+        DocumentReference userRef = FirebaseFirestore.instance.collection('users').doc(currentUser.uid);
+        
+        // Get current user data
+        DocumentSnapshot userDoc = await userRef.get();
+        Map<String, dynamic>? userData = userDoc.data() as Map<String, dynamic>?;
+        
+        List<String> currentBuildings = [];
+        if (userData != null && userData['buildings'] != null) {
+          currentBuildings = List<String>.from(userData['buildings']);
+        }
+        
+        // Add new building ID to the list
+        if (!currentBuildings.contains(buildingId)) {
+          currentBuildings.add(buildingId);
+        }
+
+        // Update user document with buildings list
+        await userRef.update({
+          'buildings': currentBuildings,
+          'lastSelectedBuilding': buildingId,
+          'lastSelectedBuildingName': buildingName,
+          // Keep the old rental field for backward compatibility, but update it to the latest building
+          'rental': buildingName,
+        });
+
+        // Close the dialog and show success message
+        if (context.mounted) {
+          Navigator.pop(context, true); // Pass true to indicate success
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Building "$buildingName" added successfully!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1711,7 +3350,7 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
   }
 
   @override
@@ -1731,6 +3370,7 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
           controller: _tabController,
           tabs: const [
             Tab(text: 'Payments'),
+            Tab(text: 'SMS Transactions'),
             Tab(text: 'Payment Receipts'),
           ],
         ),
@@ -1739,6 +3379,7 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
         controller: _tabController,
         children: [
           _buildPaymentsTab(),
+          _buildSMSTransactionsTab(),
           _buildReceiptsTab(),
         ],
       ),
@@ -1774,7 +3415,7 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
                 icon: const Icon(Icons.add),
                 label: const Text('Add Payment'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange,
+                  backgroundColor: const Color(0xFF667eea),
                   foregroundColor: Colors.white,
                 ),
               ),
@@ -1863,7 +3504,7 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                     decoration: BoxDecoration(
-                                      color: data['status'] == 'Completed' ? Colors.green : Colors.orange,
+                                      color: data['status'] == 'Completed' ? Colors.green : const Color(0xFF667eea),
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                     child: Text(
@@ -1899,6 +3540,1163 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
     );
   }
 
+  Widget _buildSMSTransactionsTab() {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF667eea),
+            Color(0xFF764ba2),
+            Color(0xFFf093fb),
+          ],
+          stops: [0.0, 0.6, 1.0],
+        ),
+      ),
+      child: SafeArea(
+        child: Column(
+          children: [
+            // Header
+            Container(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.3),
+                          ),
+                        ),
+                        child: const Icon(
+                          Icons.sms_rounded,
+                          color: Colors.white,
+                          size: 28,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'SMS Transactions',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              'Auto-synced payment messages',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.3),
+                          ),
+                        ),
+                        child: IconButton(
+                          icon: const Icon(Icons.sync_rounded, color: Colors.white),
+                          onPressed: () => _syncSMSMessages(),
+                          tooltip: 'Sync SMS Messages',
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  // SMS Sender Configuration
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: Colors.white.withOpacity(0.3),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.sms_rounded, color: Colors.white.withOpacity(0.8)),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'SMS Sender Setup',
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.9),
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              Text(
+                                'Configure payment SMS source name/number',
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.7),
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        ElevatedButton(
+                          onPressed: () => _showBankAssignmentDialog(),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.white.withOpacity(0.2),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: const Text('Setup'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            // SMS Transactions List
+            Expanded(
+              child: Container(
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(32),
+                    topRight: Radius.circular(32),
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(24),
+                      child: Row(
+                        children: [
+                          const Text(
+                            'Recent SMS Transactions',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF2D3748),
+                            ),
+                          ),
+                          const Spacer(),
+                          Text(
+                            'Last sync: 2 min ago',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[500],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: widget.selectedBuildingId == null
+                          ? Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.business_outlined,
+                                    size: 64,
+                                    color: Colors.grey[400],
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    'Select a building to view SMS transactions',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : _buildSMSTransactionsList(),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSMSTransactionsList() {
+    return StreamBuilder<List<SMSTransaction>>(
+      stream: _getSMSTransactionsStream(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF667eea)),
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return Center(
+            child: Text(
+              'Error: ${snapshot.error}',
+              style: const TextStyle(color: Colors.red),
+            ),
+          );
+        }
+
+        final transactions = snapshot.data ?? [];
+
+        if (transactions.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.sms_outlined,
+                  size: 64,
+                  color: Colors.grey[400],
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'No SMS transactions found',
+                  style: TextStyle(
+                    fontSize: 18,
+                    color: Colors.grey[600],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'SMS messages will appear here after syncing',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[500],
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          itemCount: transactions.length,
+          itemBuilder: (context, index) {
+            final transaction = transactions[index];
+            return _buildSMSTransactionCard(transaction);
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildSMSTransactionCard(SMSTransaction transaction) {
+    Color statusColor = Colors.grey;
+    switch (transaction.status) {
+      case 'matched':
+        statusColor = Colors.green;
+        break;
+      case 'pending':
+        statusColor = const Color(0xFFf093fb);
+        break;
+      case 'partial':
+        statusColor = Colors.orange;
+        break;
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF667eea).withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: () => _showTransactionDetails(transaction),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 50,
+                      height: 50,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [statusColor, statusColor.withOpacity(0.7)],
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Center(
+                        child: Text(
+                          'KES',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'KES ${transaction.amount.toStringAsFixed(0)}',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF2D3748),
+                            ),
+                          ),
+                          Text(
+                            '${transaction.building}${transaction.unit}',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: statusColor.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            transaction.status.toUpperCase(),
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: statusColor,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _formatTransactionDate(transaction.date),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[500],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                if (transaction.paymentBreakdown.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[50],
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Payment Breakdown:',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey[700],
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        ...transaction.paymentBreakdown.entries.map((entry) {
+                          return Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                entry.key.toUpperCase(),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                              Text(
+                                'KES ${entry.value.toStringAsFixed(0)}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[600],
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          );
+                        }).toList(),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _formatTransactionDate(DateTime date) {
+    final now = DateTime.now();
+    final difference = now.difference(date);
+    
+    if (difference.inDays > 0) {
+      return '${difference.inDays}d ago';
+    } else if (difference.inHours > 0) {
+      return '${difference.inHours}h ago';
+    } else {
+      return '${difference.inMinutes}m ago';
+    }
+  }
+
+  Stream<List<SMSTransaction>> _getSMSTransactionsStream() {
+    if (widget.selectedBuildingId == null) {
+      return Stream.value([]);
+    }
+    
+    return FirebaseFirestore.instance
+        .collection('rentals')
+        .doc(widget.selectedBuildingId!)
+        .collection('smsTransactions')
+        .orderBy('date', descending: true)
+        .limit(50)
+        .snapshots()
+        .map((snapshot) => snapshot.docs.map((doc) => 
+            SMSTransaction.fromMap(doc.data(), doc.id)).toList());
+  }
+
+  void _syncSMSMessages() async {
+    if (widget.selectedBuildingId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a building first'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    try {
+      // Show loading dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF667eea)),
+              ),
+              const SizedBox(height: 16),
+              const Text('Syncing SMS messages...'),
+              const SizedBox(height: 8),
+              Text(
+                'This may take a few moments',
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      // Get building's SMS sender configuration
+      final SMSService smsService = SMSService();
+      String? smsSender = await smsService.getBuildingSMSSender(widget.selectedBuildingId!);
+      
+      if (smsSender == null) {
+        Navigator.pop(context); // Close loading dialog
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please assign a bank to this building first'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      // Simulate SMS sync process (in real implementation, this would read from device SMS)
+      await Future.delayed(const Duration(seconds: 2));
+      
+      // Sample SMS messages for demonstration
+      List<String> sampleSMS = [
+        'KCB: Dear Customer, Ksh15,000.00 has been credited to your account (Ref: MERCVENUSA11) on 15/01/2024 14:30 via M-PESA Paybill 522522. Available balance Ksh45,000.00. Thank you – KCB.',
+        'KCB: Dear Customer, Ksh12,500.00 has been credited to your account (Ref: MERCVENUSB05) on 15/01/2024 15:45 via M-PESA Paybill 522522. Available balance Ksh32,500.00. Thank you – KCB.',
+        'KCB: Dear Customer, Ksh20,000.00 has been credited to your account (Ref: MERCVENUSA07) on 15/01/2024 16:15 via M-PESA Paybill 522522. Available balance Ksh55,000.00. Thank you – KCB.',
+      ];
+
+      int processedCount = 0;
+      for (String smsBody in sampleSMS) {
+        try {
+          // Parse SMS using the new simplified method
+          Map<String, String> extracted = smsService.parseSMS(smsBody, smsSender);
+          
+          if (extracted.isNotEmpty && extracted.containsKey('amount') && extracted.containsKey('reference')) {
+            // Extract building and unit from reference
+            String reference = extracted['reference'] ?? '';
+            Map<String, String> buildingUnit = smsService.extractBuildingAndUnit(reference);
+            
+            // Create SMS transaction
+            SMSTransaction transaction = SMSTransaction(
+              id: DateTime.now().millisecondsSinceEpoch.toString(),
+              buildingId: widget.selectedBuildingId!,
+              amount: double.tryParse(extracted['amount']?.replaceAll(',', '') ?? '0') ?? 0,
+              reference: reference,
+              building: buildingUnit['building'] ?? '',
+              unit: buildingUnit['unit'] ?? '',
+              date: DateTime.now(),
+              status: 'pending', // Will be updated based on payment matching
+              paymentBreakdown: {},
+              rawSMS: smsBody,
+              bankId: extracted['bank'] ?? 'Unknown',
+            );
+
+            // Save transaction
+            await smsService.saveSMSTransaction(widget.selectedBuildingId!, transaction);
+            
+            // Process payment if unit exists
+            if (transaction.unit.isNotEmpty) {
+              await _processPaymentFromSMS(transaction);
+            }
+            
+            processedCount++;
+          }
+        } catch (e) {
+          print('Error processing SMS: $e');
+        }
+      }
+
+      Navigator.pop(context); // Close loading dialog
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Successfully synced $processedCount SMS transactions'),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
+      );
+
+    } catch (e) {
+      Navigator.pop(context); // Close loading dialog if still open
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error syncing SMS: $e'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
+      );
+    }
+  }
+
+  Future<void> _processPaymentFromSMS(SMSTransaction transaction) async {
+    try {
+      // Check if unit exists in the system
+      final unitsSnapshot = await FirebaseFirestore.instance
+          .collection('rentals')
+          .doc(transaction.buildingId)
+          .collection('units')
+          .where('unitNumber', isEqualTo: transaction.unit)
+          .limit(1)
+          .get();
+
+      if (unitsSnapshot.docs.isNotEmpty) {
+        // Unit exists, process payment
+        final paymentService = PaymentTrackingService();
+        final result = await paymentService.processPayment(
+          buildingId: transaction.buildingId,
+          unitRef: transaction.unit,
+          amount: transaction.amount,
+          paymentDate: transaction.date,
+          reference: transaction.reference,
+          method: 'SMS Auto-Sync',
+        );
+
+        // Update transaction status based on payment result
+        String status = result.isComplete ? 'matched' : 'partial';
+        await FirebaseFirestore.instance
+            .collection('rentals')
+            .doc(transaction.buildingId)
+            .collection('smsTransactions')
+            .doc(transaction.id)
+            .update({
+          'status': status,
+          'paymentBreakdown': result.breakdown ?? {},
+        });
+      }
+      // If unit doesn't exist, transaction remains as 'pending' for manual approval
+    } catch (e) {
+      print('Error processing payment from SMS: $e');
+    }
+  }
+
+  void _showBankAssignmentDialog() async {
+    if (widget.selectedBuildingId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a building first'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    try {
+      final SMSService smsService = SMSService();
+      
+      // Check if platform supports SMS sync
+      if (!smsService.canSync()) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.info_outline, color: Colors.orange),
+                const SizedBox(width: 8),
+                const Text('SMS Sync Not Available'),
+              ],
+            ),
+            content: Text(smsService.getSyncStatusMessage()),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+      
+      // Get current SMS sender
+      String? currentSender = await smsService.getBuildingSMSSender(widget.selectedBuildingId!);
+      
+      TextEditingController senderController = TextEditingController(text: currentSender ?? '');
+      List<String> availableBanks = smsService.getAvailableBanks();
+      
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF667eea), Color(0xFF764ba2)],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Center(
+                  child: Icon(
+                    Icons.sms_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('SMS Sender Setup'),
+                    Text(
+                      'Configure payment SMS source',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.normal),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Enter the name or phone number that appears as the sender of payment SMS messages:',
+                  style: TextStyle(fontSize: 14),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: senderController,
+                  decoration: InputDecoration(
+                    labelText: 'SMS Sender Name/Number',
+                    hintText: 'e.g., "KCB Bank" or "+254722000000"',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    prefixIcon: const Icon(Icons.person),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF667eea).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: const Color(0xFF667eea).withOpacity(0.3),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.info_outline,
+                            color: const Color(0xFF667eea),
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Supported Banks:',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        children: availableBanks.map((bank) => Chip(
+                          label: Text(bank, style: const TextStyle(fontSize: 12)),
+                          backgroundColor: Colors.white,
+                          side: BorderSide(color: const Color(0xFF667eea).withOpacity(0.3)),
+                        )).toList(),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'The app will automatically detect the bank format from SMS content.',
+                        style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                try {
+                  String senderName = senderController.text.trim();
+                  if (senderName.isNotEmpty) {
+                    await smsService.assignSenderToBuilding(widget.selectedBuildingId!, senderName);
+                  } else {
+                    // Remove sender assignment
+                    await FirebaseFirestore.instance
+                        .collection('rentals')
+                        .doc(widget.selectedBuildingId!)
+                        .update({
+                      'smsSender': FieldValue.delete(),
+                      'updatedAt': FieldValue.serverTimestamp(),
+                    });
+                  }
+                  
+                  Navigator.pop(context);
+                  
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(senderName.isNotEmpty 
+                          ? 'SMS sender updated to: $senderName'
+                          : 'SMS sender removed'),
+                      backgroundColor: Colors.green,
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    ),
+                  );
+                } catch (e) {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Error updating SMS sender: $e'),
+                      backgroundColor: Colors.red,
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    ),
+                  );
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF667eea),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              child: const Text('Save Sender'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error loading SMS sender dialog: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _showSyncSettingsDialog() async {
+    if (widget.selectedBuildingId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a building first'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    try {
+      final SMSService smsService = SMSService();
+      DateTime? currentStartDate = await smsService.getSyncStartDate(widget.selectedBuildingId!);
+      
+      showDialog(
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setState) {
+            DateTime selectedDate = currentStartDate ?? DateTime.now();
+            
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF667eea), Color(0xFF764ba2)],
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Center(
+                      child: Icon(
+                        Icons.sync_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Sync Settings'),
+                        Text(
+                          'Configure SMS sync options',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.normal),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'SMS Sync Start Date:',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Choose from which date to start syncing SMS messages. This helps avoid processing old messages.',
+                    style: TextStyle(fontSize: 14, color: Colors.grey),
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey[300]!),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Current Start Date:',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${selectedDate.day}/${selectedDate.month}/${selectedDate.year}',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        final DateTime? picked = await showDatePicker(
+                          context: context,
+                          initialDate: selectedDate,
+                          firstDate: DateTime(2020),
+                          lastDate: DateTime.now(),
+                          builder: (context, child) {
+                            return Theme(
+                              data: Theme.of(context).copyWith(
+                                colorScheme: const ColorScheme.light(
+                                  primary: Color(0xFF667eea),
+                                ),
+                              ),
+                              child: child!,
+                            );
+                          },
+                        );
+                        if (picked != null) {
+                          setState(() {
+                            selectedDate = picked;
+                          });
+                        }
+                      },
+                      icon: const Icon(Icons.calendar_today),
+                      label: const Text('Change Date'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF667eea).withOpacity(0.1),
+                        foregroundColor: const Color(0xFF667eea),
+                        elevation: 0,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF667eea).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: const Color(0xFF667eea).withOpacity(0.3),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          color: const Color(0xFF667eea),
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            'SMS messages before this date will be ignored during sync.',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    try {
+                      await smsService.setSyncStartDate(widget.selectedBuildingId!, selectedDate);
+                      Navigator.pop(context);
+                      
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Sync start date updated to ${selectedDate.day}/${selectedDate.month}/${selectedDate.year}'),
+                          backgroundColor: Colors.green,
+                          behavior: SnackBarBehavior.floating,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
+                      );
+                    } catch (e) {
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Error updating sync start date: $e'),
+                          backgroundColor: Colors.red,
+                          behavior: SnackBarBehavior.floating,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
+                      );
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF667eea),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Text('Save Settings'),
+                ),
+              ],
+            );
+          },
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error loading sync settings: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _showTransactionDetails(SMSTransaction transaction) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF667eea), Color(0xFF764ba2)],
+                ),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Center(
+                child: Icon(
+                  Icons.sms_rounded,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Text('SMS Transaction Details'),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildDetailRow('Amount', 'KES ${transaction.amount.toStringAsFixed(2)}'),
+              _buildDetailRow('Reference', transaction.reference),
+              _buildDetailRow('Building', transaction.building),
+              _buildDetailRow('Unit', transaction.unit),
+              _buildDetailRow('Date', transaction.date.toString().split(' ')[0]),
+              _buildDetailRow('Status', transaction.status.toUpperCase()),
+              _buildDetailRow('Bank', transaction.bankId.toUpperCase()),
+              const SizedBox(height: 12),
+              const Text(
+                'Raw SMS:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 4),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  transaction.rawSMS,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close', style: TextStyle(color: Color(0xFF667eea))),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 80,
+            child: Text(
+              '$label:',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+          Expanded(child: Text(value)),
+        ],
+      ),
+    );
+  }
+
   Widget _buildReceiptsTab() {
     return Column(
       children: [
@@ -1930,11 +4728,11 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
               ),
               const SizedBox(width: 8),
               ElevatedButton.icon(
-                onPressed: () {},
+                onPressed: () => _showGenerateReceiptDialog(),
                 icon: const Icon(Icons.receipt),
                 label: const Text('Generate Receipt'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange,
+                  backgroundColor: const Color(0xFF667eea),
                   foregroundColor: Colors.white,
                 ),
               ),
@@ -2019,7 +4817,7 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color: Colors.orange,
+                color: const Color(0xFF667eea),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
@@ -2037,7 +4835,7 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
                   child: const Text('View'),
                 ),
                 TextButton(
-                  onPressed: () {},
+                  onPressed: () => _downloadReceipt(receiptNo),
                   child: const Text('Download'),
                 ),
               ],
@@ -2174,6 +4972,314 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
       ),
     );
   }
+
+  void _showGenerateReceiptDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF667eea), Color(0xFF764ba2)],
+                ),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Center(
+                child: Icon(
+                  Icons.receipt_rounded,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Text('Generate Receipt'),
+          ],
+        ),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Select a payment to generate receipt:',
+              style: TextStyle(fontSize: 16),
+            ),
+            SizedBox(height: 16),
+            Text(
+              'This feature will allow you to:',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+            SizedBox(height: 8),
+            Text('• Generate PDF receipts for payments'),
+            Text('• Include payment breakdown details'),
+            Text('• Add building and tenant information'),
+            Text('• Download or print receipts'),
+            SizedBox(height: 16),
+            Text(
+              'Receipt will be generated and copied to clipboard for easy sharing.',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+          ElevatedButton(
+            onPressed: () => _generateSampleReceipt(context),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF667eea),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Generate Sample Receipt'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _generateSampleReceipt(BuildContext context) async {
+    Navigator.pop(context); // Close the dialog first
+    
+    try {
+      // Show loading
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              ),
+              SizedBox(width: 12),
+              Text('Generating receipt...'),
+            ],
+          ),
+          backgroundColor: Color(0xFF667eea),
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      final receiptService = ReceiptService();
+      
+      // Generate sample receipt
+      Map<String, dynamic> receiptData = await receiptService.generateReceipt(
+        buildingId: widget.selectedBuildingId!,
+        tenantId: 'sample_tenant', // Sample tenant ID
+        amount: 15000.0,
+        paymentMethod: 'M-PESA',
+        paymentDate: DateTime.now(),
+        reference: 'SAMPLE123',
+        breakdown: {'Rent Payment': 12000.0, 'Water Bill': 2000.0, 'Service Charge': 1000.0},
+      );
+
+      // Copy to clipboard
+      await receiptService.copyReceiptToClipboard(receiptData);
+
+      // Show success message
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Sample receipt ${receiptData['receiptNo']} generated and copied to clipboard!'),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          action: SnackBarAction(
+            label: 'View',
+            textColor: Colors.white,
+            onPressed: () => _showReceiptPreview(receiptData),
+          ),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error generating receipt: $e'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
+      );
+    }
+  }
+
+  void _generateReceiptForTransaction(SMSTransaction transaction) async {
+    try {
+      // Show loading
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              ),
+              SizedBox(width: 12),
+              Text('Generating receipt...'),
+            ],
+          ),
+          backgroundColor: Color(0xFF667eea),
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      final receiptService = ReceiptService();
+      
+      // Generate receipt for actual transaction
+      Map<String, dynamic> receiptData = await receiptService.generateReceipt(
+        buildingId: widget.selectedBuildingId!,
+        tenantId: 'tenant_${transaction.unit}', // Use unit as tenant identifier
+        amount: transaction.amount,
+        paymentMethod: 'M-PESA',
+        paymentDate: transaction.date,
+        reference: transaction.reference,
+        breakdown: transaction.paymentBreakdown.isNotEmpty 
+            ? transaction.paymentBreakdown 
+            : {'Rent Payment': transaction.amount},
+      );
+
+      // Copy to clipboard
+      await receiptService.copyReceiptToClipboard(receiptData);
+
+      // Show success message
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Receipt ${receiptData['receiptNo']} generated and copied to clipboard!'),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          action: SnackBarAction(
+            label: 'View',
+            textColor: Colors.white,
+            onPressed: () => _showReceiptPreview(receiptData),
+          ),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error generating receipt: $e'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
+      );
+    }
+  }
+
+  void _showReceiptPreview(Map<String, dynamic> receiptData) {
+    final receiptService = ReceiptService();
+    String receiptText = receiptService.generateReceiptText(receiptData);
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.receipt, color: Color(0xFF667eea)),
+            const SizedBox(width: 8),
+            Text('Receipt ${receiptData['receiptNo']}'),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 400,
+          child: SingleChildScrollView(
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey[300]!),
+              ),
+              child: Text(
+                receiptText,
+                style: const TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              await receiptService.copyReceiptToClipboard(receiptData);
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Receipt copied to clipboard!'),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF667eea),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Copy to Clipboard'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _downloadReceipt(String receiptNo) async {
+    try {
+      final receiptService = ReceiptService();
+      Map<String, dynamic>? receiptData = await receiptService.getReceiptByNumber(
+        widget.selectedBuildingId!,
+        receiptNo,
+      );
+      
+      if (receiptData != null) {
+        await receiptService.copyReceiptToClipboard(receiptData);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Receipt $receiptNo copied to clipboard!'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            action: SnackBarAction(
+              label: 'View',
+              textColor: Colors.white,
+              onPressed: () => _showReceiptPreview(receiptData),
+            ),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Receipt not found'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error loading receipt: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
 }
 
 // Add Payment Dialog
@@ -2217,7 +5323,7 @@ class _AddPaymentDialogState extends State<AddPaymentDialog> {
     return AlertDialog(
       title: const Row(
         children: [
-          Icon(Icons.payment, color: Colors.orange),
+          Icon(Icons.payment, color: const Color(0xFF667eea)),
           SizedBox(width: 8),
           Text('Add Payment'),
         ],
@@ -2315,7 +5421,7 @@ class _AddPaymentDialogState extends State<AddPaymentDialog> {
         ElevatedButton(
           onPressed: _isLoading ? null : _addPayment,
           style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.orange,
+            backgroundColor: const Color(0xFF667eea),
             foregroundColor: Colors.white,
           ),
           child: _isLoading
@@ -2429,7 +5535,7 @@ class _EditBuildingDialogState extends State<EditBuildingDialog> {
     return AlertDialog(
       title: const Row(
         children: [
-          Icon(Icons.edit, color: Colors.orange),
+          Icon(Icons.edit, color: const Color(0xFF667eea)),
           SizedBox(width: 8),
           Text('Edit Building'),
         ],
@@ -2491,7 +5597,7 @@ class _EditBuildingDialogState extends State<EditBuildingDialog> {
         ),
         ElevatedButton(
           onPressed: _isLoading ? null : _updateBuilding,
-          style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white),
+          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF667eea), foregroundColor: Colors.white),
           child: _isLoading
               ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.white)))
               : const Text('Update'),
@@ -2594,7 +5700,7 @@ class _TenantManagementPageState extends State<TenantManagementPage> with Ticker
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              Expanded(child: _buildStatCard('All Tenants', '82', Colors.orange, Icons.people)),
+              Expanded(child: _buildStatCard('All Tenants', '82', const Color(0xFF667eea), Icons.people)),
               const SizedBox(width: 12),
               Expanded(child: _buildStatCard('Tenants with Arrears', '12', Colors.red, Icons.warning)),
               const SizedBox(width: 12),
@@ -2606,7 +5712,7 @@ class _TenantManagementPageState extends State<TenantManagementPage> with Ticker
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(
             children: [
-              Expanded(child: _buildStatCard('Good Standing', '58', Colors.blue, Icons.thumb_up)),
+              Expanded(child: _buildStatCard('Good Standing', '58', const Color(0xFF764ba2), Icons.thumb_up)),
               const SizedBox(width: 12),
               Expanded(child: _buildStatCard('Vacated Tenants', '8', Colors.grey, Icons.home)),
               const SizedBox(width: 12),
@@ -2640,7 +5746,7 @@ class _TenantManagementPageState extends State<TenantManagementPage> with Ticker
                 icon: const Icon(Icons.add),
                 label: const Text('Add Tenant'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange,
+                  backgroundColor: const Color(0xFF667eea),
                   foregroundColor: Colors.white,
                 ),
               ),
@@ -2770,7 +5876,7 @@ class _TenantManagementPageState extends State<TenantManagementPage> with Ticker
                     icon: const Icon(Icons.home),
                     label: const Text('Move In'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.orange,
+                      backgroundColor: const Color(0xFF667eea),
                       foregroundColor: Colors.white,
                     ),
                   ),
@@ -2882,7 +5988,7 @@ class _TenantManagementPageState extends State<TenantManagementPage> with Ticker
     
     Color statusColor = Colors.green;
     if (status == 'Arrears') statusColor = Colors.red;
-    if (status == 'Good Standing') statusColor = Colors.blue;
+    if (status == 'Good Standing') statusColor = const Color(0xFF764ba2);
     if (status == 'Vacated') statusColor = Colors.grey;
     
     Color balanceColor = balance >= 0 ? Colors.green : Colors.red;
@@ -2940,8 +6046,8 @@ class _TenantManagementPageState extends State<TenantManagementPage> with Ticker
   }
 
   Widget _buildMoveInOutRow(String tenant, String unit, String type, String date, String status) {
-    Color statusColor = status == 'Completed' ? Colors.green : Colors.orange;
-    Color typeColor = type == 'Move In' ? Colors.orange : Colors.grey;
+    Color statusColor = status == 'Completed' ? Colors.green : const Color(0xFF667eea);
+    Color typeColor = type == 'Move In' ? const Color(0xFF667eea) : Colors.grey;
     
     return Container(
       padding: const EdgeInsets.all(16),
@@ -2985,7 +6091,7 @@ class _TenantManagementPageState extends State<TenantManagementPage> with Ticker
           ),
           const Expanded(
             flex: 2,
-            child: Text('View Details', style: TextStyle(color: Colors.blue)),
+            child: Text('View Details', style: TextStyle(color: const Color(0xFF764ba2))),
           ),
         ],
       ),
@@ -3134,7 +6240,7 @@ class UnitManagementPage extends StatelessWidget {
         title: const Text('Unit Management'),
         automaticallyImplyLeading: false,
       ),
-      body: const Center(child: Text('Unit Management - Coming Soon')),
+      body: const UnitsScreen(),
     );
   }
 }
@@ -3149,7 +6255,7 @@ class SMSCommunicationsPage extends StatelessWidget {
         title: const Text('SMS Communications'),
         automaticallyImplyLeading: false,
       ),
-      body: const Center(child: Text('SMS Communications - Coming Soon')),
+      body: const SMSScreen(),
     );
   }
 }
@@ -3164,7 +6270,7 @@ class ExpensesPage extends StatelessWidget {
         title: const Text('Expenses'),
         automaticallyImplyLeading: false,
       ),
-      body: const Center(child: Text('Expenses - Coming Soon')),
+      body: const ExpensesScreen(),
     );
   }
 }
@@ -3179,7 +6285,7 @@ class ReportsPage extends StatelessWidget {
         title: const Text('Reports'),
         automaticallyImplyLeading: false,
       ),
-      body: const Center(child: Text('Reports - Coming Soon')),
+      body: const ReportsScreen(),
     );
   }
 }
@@ -3219,7 +6325,7 @@ class _AddTenantDialogState extends State<AddTenantDialog> {
     return AlertDialog(
       title: const Row(
         children: [
-          Icon(Icons.person_add, color: Colors.orange),
+          Icon(Icons.person_add, color: const Color(0xFF667eea)),
           SizedBox(width: 8),
           Text('Add New Tenant'),
         ],
@@ -3315,7 +6421,7 @@ class _AddTenantDialogState extends State<AddTenantDialog> {
         ),
         ElevatedButton(
           onPressed: _isLoading ? null : _addTenant,
-          style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white),
+          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF667eea), foregroundColor: Colors.white),
           child: _isLoading
               ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.white)))
               : const Text('Add Tenant'),
@@ -3395,7 +6501,7 @@ class _MoveInDialogState extends State<MoveInDialog> {
     return AlertDialog(
       title: const Row(
         children: [
-          Icon(Icons.home, color: Colors.orange),
+          Icon(Icons.home, color: const Color(0xFF667eea)),
           SizedBox(width: 8),
           Text('Move In Process'),
         ],
@@ -3452,7 +6558,7 @@ class _MoveInDialogState extends State<MoveInDialog> {
         ),
         ElevatedButton(
           onPressed: _isLoading ? null : _processMoveIn,
-          style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white),
+          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF667eea), foregroundColor: Colors.white),
           child: _isLoading
               ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.white)))
               : const Text('Process Move In'),

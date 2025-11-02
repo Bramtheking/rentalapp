@@ -62,13 +62,14 @@ class _LoginScreenState extends State<LoginScreen> {
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
             colors: [
-              Colors.orange,
-              Colors.white,
+              Color(0xFF667eea),
+              Color(0xFF764ba2),
+              Color(0xFFf093fb),
             ],
-            stops: [0.0, 0.4],
+            stops: [0.0, 0.5, 1.0],
           ),
         ),
         child: SafeArea(
@@ -97,9 +98,9 @@ class _LoginScreenState extends State<LoginScreen> {
                           ],
                         ),
                         child: const Icon(
-                          Icons.home_work,
+                          Icons.home_work_rounded,
                           size: 40,
-                          color: Colors.orange,
+                          color: Color(0xFF667eea),
                         ),
                       ),
                       const SizedBox(height: 20),
@@ -154,7 +155,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                             focusedBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(color: Colors.orange),
+                              borderSide: const BorderSide(color: Color(0xFF667eea)),
                             ),
                           ),
                           validator: (value) {
@@ -192,7 +193,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                             focusedBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(color: Colors.orange),
+                              borderSide: const BorderSide(color: Color(0xFF667eea)),
                             ),
                           ),
                           validator: (value) {
@@ -215,7 +216,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             },
                             child: const Text(
                               'Forgot Password?',
-                              style: TextStyle(color: Colors.orange),
+                              style: TextStyle(color: Color(0xFF667eea)),
                             ),
                           ),
                         ),
@@ -241,46 +242,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ),
                                 ),
                         ),
-                        const SizedBox(height: 20),
-                        // Divider
-                        Row(
-                          children: [
-                            Expanded(child: Divider(color: Colors.grey[300])),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16),
-                              child: Text(
-                                'OR',
-                                style: TextStyle(
-                                  color: Colors.grey[600],
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                            Expanded(child: Divider(color: Colors.grey[300])),
-                          ],
-                        ),
-                        const SizedBox(height: 20),
-                        // Sign Up Button
-                        OutlinedButton(
-                          onPressed: () {
-                            // TODO: Navigate to sign up screen
-                          },
-                          style: OutlinedButton.styleFrom(
-                            side: const BorderSide(color: Colors.orange),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                          ),
-                          child: const Text(
-                            'Create Account',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.orange,
-                            ),
-                          ),
-                        ),
+
                       ],
                     ),
                   ),

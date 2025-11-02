@@ -3,6 +3,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user_model.dart';
 import '../models/rental_model.dart';
 import '../utils/firebase_helper.dart';
+import '../services/auth_service.dart';
+import 'sms_format_editor_screen.dart';
 
 class SuperAdminDashboard extends StatefulWidget {
   const SuperAdminDashboard({super.key});
@@ -18,7 +20,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
   }
 
   @override
@@ -33,12 +35,41 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
       appBar: AppBar(
         title: const Text('Super Admin Dashboard'),
         backgroundColor: Colors.orange,
+        actions: [
+          PopupMenuButton<String>(
+            onSelected: (value) async {
+              if (value == 'logout') {
+                // Import AuthService
+                final authService = AuthService();
+                await authService.signOut();
+                if (context.mounted) {
+                  Navigator.of(context).pushReplacementNamed('/login');
+                }
+              }
+            },
+            itemBuilder: (BuildContext context) {
+              return [
+                const PopupMenuItem<String>(
+                  value: 'logout',
+                  child: Row(
+                    children: [
+                      Icon(Icons.logout, color: Colors.orange),
+                      SizedBox(width: 8),
+                      Text('Sign Out'),
+                    ],
+                  ),
+                ),
+              ];
+            },
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: Colors.white,
           tabs: const [
             Tab(icon: Icon(Icons.people), text: 'Users'),
             Tab(icon: Icon(Icons.home_work), text: 'Rentals'),
+            Tab(icon: Icon(Icons.sms), text: 'SMS Formats'),
             Tab(icon: Icon(Icons.add_circle), text: 'Add User'),
           ],
         ),
@@ -48,6 +79,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard>
         children: const [
           UsersManagementTab(),
           RentalsManagementTab(),
+          SMSFormatEditorScreen(),
           AddUserTab(),
         ],
       ),
@@ -306,7 +338,6 @@ class _AddUserTabState extends State<AddUserTab> {
   final List<String> _userTypes = [
     'rentalmanager',
     'editor',
-    'admin',
   ];
 
   @override
@@ -391,9 +422,7 @@ class _AddUserTabState extends State<AddUserTab> {
               items: _userTypes.map((type) {
                 String displayName = type == 'rentalmanager' 
                     ? 'Rental Manager' 
-                    : type == 'editor' 
-                        ? 'Editor' 
-                        : 'Administrator';
+                    : 'Editor';
                 return DropdownMenuItem(
                   value: type,
                   child: Text(displayName),
@@ -566,12 +595,10 @@ class _EditUserDialogState extends State<EditUserDialog> {
               labelText: 'User Role',
               border: OutlineInputBorder(),
             ),
-            items: ['rentalmanager', 'editor', 'admin'].map((type) {
+            items: ['rentalmanager', 'editor'].map((type) {
               String displayName = type == 'rentalmanager' 
                   ? 'Rental Manager' 
-                  : type == 'editor' 
-                      ? 'Editor' 
-                      : 'Administrator';
+                  : 'Editor';
               return DropdownMenuItem(
                 value: type,
                 child: Text(displayName),

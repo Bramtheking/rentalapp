@@ -9,9 +9,8 @@ plugins {
 
 android {
     namespace = "com.example.rentalapp"
-    compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
-
+    compileSdk = 34  // Use explicit version instead of flutter.compileSdkVersion
+    
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
@@ -26,10 +25,10 @@ android {
         applicationId = "com.example.rentalapp"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
-        versionCode = flutter.versionCode
-        versionName = flutter.versionName
+        minSdk = flutter.minSdkVersion  // Use explicit version
+        targetSdk = 34  // Use explicit version
+        versionCode = 1
+        versionName = "1.0.0"
     }
 
     buildTypes {

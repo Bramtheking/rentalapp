@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+
 import '../services/auth_service.dart';
+import '../services/sms_service.dart';
+import '../services/report_service.dart';
 
 class SMSScreen extends StatefulWidget {
   const SMSScreen({super.key});
@@ -11,6 +14,8 @@ class SMSScreen extends StatefulWidget {
 
 class _SMSScreenState extends State<SMSScreen> with TickerProviderStateMixin {
   final AuthService _authService = AuthService();
+  final SMSService _smsService = SMSService();
+
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _messageController = TextEditingController();
   
@@ -18,10 +23,11 @@ class _SMSScreenState extends State<SMSScreen> with TickerProviderStateMixin {
   Map<String, dynamic>? currentUser;
   String? selectedRentalId;
   bool isLoading = true;
+  bool isSending = false;
   
   // SMS Balance and stats
-  int smsBalance = 250;
-  int totalSmsCredits = 500;
+  String smsBalance = 'Unknown';
+  List<Map<String, dynamic>> smsLogs = [];
   
   // Recipients selection
   String selectedRecipientType = 'individual';
@@ -74,6 +80,26 @@ class _SMSScreenState extends State<SMSScreen> with TickerProviderStateMixin {
         }
         isLoading = false;
       });
+      
+      // Load SMS balance and logs
+      await _loadSMSData();
+    }
+  }
+
+  Future<void> _loadSMSData() async {
+    try {
+      // Get SMS balance
+      Map<String, dynamic> balanceResult = await _smsService.getSMSBalance();
+      
+      // Get SMS logs
+      List<Map<String, dynamic>> logs = await _smsService.getSMSLogs(limit: 20);
+      
+      setState(() {
+        smsBalance = balanceResult['balance']?.toString() ?? 'Unknown';
+        smsLogs = logs;
+      });
+    } catch (e) {
+      print('Error loading SMS data: $e');
     }
   }
 
@@ -96,8 +122,6 @@ class _SMSScreenState extends State<SMSScreen> with TickerProviderStateMixin {
     return Scaffold(
       appBar: AppBar(
         title: const Text('SMS Communications'),
-        backgroundColor: Colors.orange[700],
-        foregroundColor: Colors.white,
         actions: [
           ElevatedButton.icon(
             onPressed: () => _showRechargeDialog(),
@@ -105,7 +129,7 @@ class _SMSScreenState extends State<SMSScreen> with TickerProviderStateMixin {
             label: const Text('Recharge via M-Pesa'),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.white,
-              foregroundColor: Colors.orange[700],
+              foregroundColor: const Color(0xFF667eea),
             ),
           ),
           const SizedBox(width: 16),
@@ -124,10 +148,10 @@ class _SMSScreenState extends State<SMSScreen> with TickerProviderStateMixin {
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(16),
-            color: Colors.orange[50],
+            color: const Color(0xFF667eea).withOpacity(0.1),
             child: Row(
               children: [
-                Icon(Icons.sms, color: Colors.orange[700], size: 24),
+                const Icon(Icons.sms, color: Color(0xFF667eea), size: 24),
                 const SizedBox(width: 12),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -140,11 +164,11 @@ class _SMSScreenState extends State<SMSScreen> with TickerProviderStateMixin {
                       ),
                     ),
                     Text(
-                      '$smsBalance messages remaining',
+                      smsBalance == 'Unknown' ? 'SMS Balance: $smsBalance' : '$smsBalance messages remaining',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
-                        color: Colors.orange[700],
+                        color: const Color(0xFF667eea),
                       ),
                     ),
                   ],
@@ -249,26 +273,49 @@ class _SMSScreenState extends State<SMSScreen> with TickerProviderStateMixin {
           
           // Phone Number Input or Group Selection
           if (selectedRecipientType == 'individual') ...[
-            TextFormField(
-              controller: _phoneController,
-              decoration: InputDecoration(
-                labelText: 'Enter phone number',
-                hintText: '+254712345678',
-                border: const OutlineInputBorder(),
-                prefixIcon: const Icon(Icons.phone),
-                suffixIcon: ElevatedButton(
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: _phoneController,
+                    decoration: const InputDecoration(
+                      labelText: 'Enter phone number',
+                      hintText: '+254712345678',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.phone),
+                    ),
+                    keyboardType: TextInputType.phone,
+                    onFieldSubmitted: (_) => _addPhoneNumber(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton.icon(
                   onPressed: _addPhoneNumber,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange,
+                    backgroundColor: const Color(0xFF667eea),
                     foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(4),
-                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   ),
-                  child: const Text('Add'),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add'),
                 ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            // Quick tenant selection (coming soon)
+            ElevatedButton.icon(
+              onPressed: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Tenant selection feature coming soon!')),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue.shade50,
+                foregroundColor: Colors.blue.shade700,
+                side: BorderSide(color: Colors.blue.shade200),
               ),
-              keyboardType: TextInputType.phone,
+              icon: const Icon(Icons.people),
+              label: const Text('Select from Tenants'),
             ),
           ] else ...[
             Container(
@@ -291,42 +338,70 @@ class _SMSScreenState extends State<SMSScreen> with TickerProviderStateMixin {
                     children: [
                       FilterChip(
                         label: const Text('All Tenants'),
-                        selected: selectedPhones.contains('all_tenants'),
+                        selected: selectedPhones.contains('all'),
                         onSelected: (selected) {
                           setState(() {
                             if (selected) {
                               selectedPhones.clear();
-                              selectedPhones.add('all_tenants');
+                              selectedPhones.add('all');
                             } else {
-                              selectedPhones.remove('all_tenants');
+                              selectedPhones.remove('all');
                             }
                           });
                         },
                       ),
                       FilterChip(
                         label: const Text('Active Tenants'),
-                        selected: selectedPhones.contains('active_tenants'),
+                        selected: selectedPhones.contains('active'),
                         onSelected: (selected) {
                           setState(() {
                             if (selected) {
                               selectedPhones.clear();
-                              selectedPhones.add('active_tenants');
+                              selectedPhones.add('active');
                             } else {
-                              selectedPhones.remove('active_tenants');
+                              selectedPhones.remove('active');
                             }
                           });
                         },
                       ),
                       FilterChip(
                         label: const Text('Tenants with Arrears'),
-                        selected: selectedPhones.contains('arrears_tenants'),
+                        selected: selectedPhones.contains('arrears'),
                         onSelected: (selected) {
                           setState(() {
                             if (selected) {
                               selectedPhones.clear();
-                              selectedPhones.add('arrears_tenants');
+                              selectedPhones.add('arrears');
                             } else {
-                              selectedPhones.remove('arrears_tenants');
+                              selectedPhones.remove('arrears');
+                            }
+                          });
+                        },
+                      ),
+                      FilterChip(
+                        label: const Text('Overdue 7+ Days'),
+                        selected: selectedPhones.contains('overdue_7'),
+                        onSelected: (selected) {
+                          setState(() {
+                            if (selected) {
+                              selectedPhones.clear();
+                              selectedPhones.add('overdue_7');
+                            } else {
+                              selectedPhones.remove('overdue_7');
+                            }
+                          });
+                        },
+                      ),
+                      FilterChip(
+                        label: const Text('Overdue 30+ Days'),
+                        selected: selectedPhones.contains('overdue_30'),
+                        onSelected: (selected) {
+                          setState(() {
+                            if (selected) {
+                              selectedPhones.clear();
+                              selectedPhones.add('overdue_30');
+                            } else {
+                              selectedPhones.remove('overdue_30');
                             }
                           });
                         },
@@ -346,9 +421,9 @@ class _SMSScreenState extends State<SMSScreen> with TickerProviderStateMixin {
               width: double.infinity,
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.blue[50],
+                color: const Color(0xFF764ba2).withOpacity(0.1),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.blue[200]!),
+                border: Border.all(color: const Color(0xFF764ba2).withOpacity(0.3)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -369,7 +444,7 @@ class _SMSScreenState extends State<SMSScreen> with TickerProviderStateMixin {
                             selectedPhones.remove(phone);
                           });
                         },
-                        backgroundColor: Colors.blue[100],
+                        backgroundColor: const Color(0xFF764ba2).withOpacity(0.2),
                       );
                     }).toList(),
                   ),
@@ -447,13 +522,22 @@ class _SMSScreenState extends State<SMSScreen> with TickerProviderStateMixin {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
-              onPressed: selectedPhones.isNotEmpty && _messageController.text.isNotEmpty
+              onPressed: selectedPhones.isNotEmpty && _messageController.text.isNotEmpty && !isSending
                   ? _sendSMS
                   : null,
-              icon: const Icon(Icons.send),
-              label: const Text('Send SMS'),
+              icon: isSending 
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  : const Icon(Icons.send),
+              label: Text(isSending ? 'Sending...' : 'Send SMS'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.orange[700],
+                backgroundColor: const Color(0xFF667eea),
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 textStyle: const TextStyle(fontSize: 16),
@@ -492,7 +576,7 @@ class _SMSScreenState extends State<SMSScreen> with TickerProviderStateMixin {
                 icon: const Icon(Icons.add),
                 label: const Text('Add Template'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange[700],
+                  backgroundColor: const Color(0xFF667eea),
                   foregroundColor: Colors.white,
                 ),
               ),
@@ -567,12 +651,16 @@ class _SMSScreenState extends State<SMSScreen> with TickerProviderStateMixin {
 
   String _getDisplayName(String phone) {
     switch (phone) {
-      case 'all_tenants':
+      case 'all':
         return 'All Tenants';
-      case 'active_tenants':
+      case 'active':
         return 'Active Tenants';
-      case 'arrears_tenants':
+      case 'arrears':
         return 'Tenants with Arrears';
+      case 'overdue_7':
+        return 'Overdue 7+ Days';
+      case 'overdue_30':
+        return 'Overdue 30+ Days';
       default:
         return phone;
     }
@@ -584,44 +672,122 @@ class _SMSScreenState extends State<SMSScreen> with TickerProviderStateMixin {
     return smsCount * selectedPhones.length;
   }
 
-  void _sendSMS() {
-    // TODO: Implement SMS sending logic
-    showDialog(
+  void _sendSMS() async {
+    if (selectedPhones.isEmpty || _messageController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select recipients and enter a message'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Show confirmation dialog
+    bool? confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Send SMS'),
+        title: const Text('Confirm SMS Send'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('Recipients: ${selectedPhones.length}'),
-            Text('Message: ${_messageController.text.substring(0, _messageController.text.length > 50 ? 50 : _messageController.text.length)}...'),
-            Text('Cost: ${_calculateSMSCost()} SMS credits'),
+            const SizedBox(height: 8),
+            const Text('Message Preview:'),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                _messageController.text.length > 100 
+                    ? '${_messageController.text.substring(0, 100)}...'
+                    : _messageController.text,
+                style: const TextStyle(fontSize: 12),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text('Estimated cost: ${_calculateSMSCost()} SMS credits'),
           ],
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(context, false),
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('SMS sent successfully!')),
-              );
-              // Clear form
-              setState(() {
-                selectedPhones.clear();
-                _messageController.clear();
-                _phoneController.clear();
-              });
-            },
-            child: const Text('Send'),
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF667eea),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Send SMS'),
           ),
         ],
       ),
     );
+
+    if (confirmed != true) return;
+
+    setState(() {
+      isSending = true;
+    });
+
+    try {
+      Map<String, dynamic> result;
+      
+      if (selectedRecipientType == 'individual') {
+        // Send to individual numbers
+        if (selectedPhones.length == 1) {
+          result = await _smsService.sendSMS(
+            phoneNumber: selectedPhones.first,
+            message: _messageController.text,
+          );
+        } else {
+          result = await _smsService.sendBulkSMS(
+            phoneNumbers: selectedPhones,
+            message: _messageController.text,
+          );
+        }
+      } else {
+        // Send to groups
+        String groupType = selectedPhones.first;
+        result = await _smsService.sendSMSToGroup(
+          buildingId: selectedRentalId!,
+          groupType: groupType,
+          message: _messageController.text,
+        );
+      }
+
+      if (result['success']) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result['message']),
+            backgroundColor: Colors.green,
+          ),
+        );
+        
+        // Clear form
+        setState(() {
+          selectedPhones.clear();
+          _messageController.clear();
+          _phoneController.clear();
+        });
+        
+        // Reload SMS data
+        await _loadSMSData();
+      } else {
+        _showErrorDialog('SMS Failed', result['message']);
+      }
+    } catch (e) {
+      _showErrorDialog('Connection Error', 'Unable to connect to SMS service. Please check your internet connection and try again.');
+    } finally {
+      setState(() {
+        isSending = false;
+      });
+    }
   }
 
   void _showTemplateSelector() {
@@ -667,7 +833,7 @@ class _SMSScreenState extends State<SMSScreen> with TickerProviderStateMixin {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Schedule SMS'),
-        content: const Text('SMS scheduling feature coming soon!'),
+        content: const Text('SMS scheduling will be available in the next update. For now, you can send SMS immediately.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -704,10 +870,17 @@ class _SMSScreenState extends State<SMSScreen> with TickerProviderStateMixin {
             onPressed: () {
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Recharge feature coming soon!')),
+                const SnackBar(
+                  content: Text('M-Pesa integration coming soon!'),
+                  backgroundColor: Colors.blue,
+                ),
               );
             },
-            child: const Text('Recharge'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF667eea),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Proceed'),
           ),
         ],
       ),
@@ -717,7 +890,7 @@ class _SMSScreenState extends State<SMSScreen> with TickerProviderStateMixin {
   void _showAddTemplateDialog() {
     final titleController = TextEditingController();
     final messageController = TextEditingController();
-    
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -793,7 +966,7 @@ class _SMSScreenState extends State<SMSScreen> with TickerProviderStateMixin {
   void _editTemplate(Map<String, String> template) {
     final titleController = TextEditingController(text: template['title']);
     final messageController = TextEditingController(text: template['message']);
-    
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -826,9 +999,9 @@ class _SMSScreenState extends State<SMSScreen> with TickerProviderStateMixin {
           ),
           ElevatedButton(
             onPressed: () {
-              final index = messageTemplates.indexOf(template);
-              if (index != -1) {
+              if (titleController.text.isNotEmpty && messageController.text.isNotEmpty) {
                 setState(() {
+                  final index = messageTemplates.indexOf(template);
                   messageTemplates[index] = {
                     'title': titleController.text,
                     'message': messageController.text,
@@ -859,7 +1032,6 @@ class _SMSScreenState extends State<SMSScreen> with TickerProviderStateMixin {
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () {
               setState(() {
                 messageTemplates.remove(template);
@@ -869,7 +1041,80 @@ class _SMSScreenState extends State<SMSScreen> with TickerProviderStateMixin {
                 const SnackBar(content: Text('Template deleted successfully!')),
               );
             },
-            child: const Text('Delete', style: TextStyle(color: Colors.white)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showErrorDialog(String title, String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.error_outline, color: Colors.red),
+            const SizedBox(width: 8),
+            Text(title),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(message),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue.shade200),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.lightbulb_outline, color: Colors.blue.shade700, size: 20),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Troubleshooting Tips:',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Text('• Check your internet connection'),
+                  const Text('• Verify phone numbers are correct'),
+                  const Text('• Try again in a few minutes'),
+                  const Text('• Contact support if problem persists'),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              // Retry the SMS
+              _sendSMS();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF667eea),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Retry'),
           ),
         ],
       ),

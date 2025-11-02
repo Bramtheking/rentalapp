@@ -105,9 +105,94 @@ class AuthService {
       String userType = userData['userType'] ?? '';
       bool isActive = userData['isActive'] ?? false;
       
-      return isActive && (userType == requiredType || userType == 'admin');
+      return isActive && (userType == requiredType || userType == 'superadmin');
     } catch (e) {
       return false;
+    }
+  }
+
+  // Assign building to user (for editors)
+  Future<void> assignBuildingToUser({
+    required String userId,
+    required String buildingId,
+    required String buildingName,
+  }) async {
+    try {
+      DocumentReference userRef = _firestore.collection('users').doc(userId);
+      
+      // Get current user data
+      DocumentSnapshot userDoc = await userRef.get();
+      Map<String, dynamic>? userData = userDoc.data() as Map<String, dynamic>?;
+      
+      if (userData == null) {
+        throw Exception('User not found');
+      }
+
+      // Get current buildings list
+      List<String> currentBuildings = [];
+      if (userData['buildings'] != null) {
+        currentBuildings = List<String>.from(userData['buildings']);
+      }
+      
+      // Add building if not already assigned
+      if (!currentBuildings.contains(buildingId)) {
+        currentBuildings.add(buildingId);
+      }
+
+      // Update user document
+      await userRef.update({
+        'buildings': currentBuildings,
+        'rental': buildingName, // For backward compatibility
+        'lastSelectedBuilding': buildingId,
+        'lastSelectedBuildingName': buildingName,
+      });
+
+    } catch (e) {
+      throw Exception('Failed to assign building to user: $e');
+    }
+  }
+
+  // Remove building from user
+  Future<void> removeBuildingFromUser({
+    required String userId,
+    required String buildingId,
+  }) async {
+    try {
+      DocumentReference userRef = _firestore.collection('users').doc(userId);
+      
+      // Get current user data
+      DocumentSnapshot userDoc = await userRef.get();
+      Map<String, dynamic>? userData = userDoc.data() as Map<String, dynamic>?;
+      
+      if (userData == null) {
+        throw Exception('User not found');
+      }
+
+      // Get current buildings list
+      List<String> currentBuildings = [];
+      if (userData['buildings'] != null) {
+        currentBuildings = List<String>.from(userData['buildings']);
+      }
+      
+      // Remove building
+      currentBuildings.remove(buildingId);
+
+      // Update user document
+      Map<String, dynamic> updateData = {
+        'buildings': currentBuildings,
+      };
+
+      // If this was the last selected building, clear it
+      if (userData['lastSelectedBuilding'] == buildingId) {
+        updateData['lastSelectedBuilding'] = null;
+        updateData['lastSelectedBuildingName'] = 'Select Building';
+        updateData['rental'] = '';
+      }
+
+      await userRef.update(updateData);
+
+    } catch (e) {
+      throw Exception('Failed to remove building from user: $e');
     }
   }
 

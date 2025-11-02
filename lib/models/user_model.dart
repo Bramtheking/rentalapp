@@ -54,7 +54,7 @@ class UserModel {
 
   // Check if user has specific permission
   bool hasPermission(String requiredType) {
-    return isActive && (userType == requiredType || userType == 'admin' || userType == 'superadmin');
+    return isActive && (userType == requiredType || userType == 'superadmin');
   }
 
   // Get user role display name
