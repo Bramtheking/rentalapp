@@ -339,8 +339,25 @@ class _HomeScreenState extends State<HomeScreen> {
       
       if (smsSender == null) return; // No SMS sender configured, skip auto-sync
       
-      // Auto-sync is now simplified - just check if SMS sender is configured
-      // The actual SMS parsing will be done when SMS messages are manually processed
+      // Check if auto-sync is enabled for this building
+      bool autoSyncEnabled = await smsService.isAutoSyncEnabled(_selectedBuildingId!);
+      if (!autoSyncEnabled) return;
+      
+      // Perform silent SMS sync (limit to recent messages to avoid overwhelming)
+      List<SMSTransaction> transactions = await smsService.syncSMSMessages(_selectedBuildingId!);
+      
+      // Process payments for new transactions
+      for (SMSTransaction transaction in transactions) {
+        if (transaction.unit.isNotEmpty) {
+          try {
+            await _processPaymentFromSMS(transaction);
+          } catch (e) {
+            print('Auto-sync payment processing error: $e');
+          }
+        }
+      }
+      
+      print('Auto-sync completed: ${transactions.length} transactions processed');
       
     } catch (e) {
       // Silent failure for auto-sync - don't show errors to user
@@ -4031,7 +4048,7 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
               const Text('Syncing SMS messages...'),
               const SizedBox(height: 8),
               Text(
-                'This may take a few moments',
+                'Reading SMS messages from your device',
                 style: TextStyle(fontSize: 12, color: Colors.grey[600]),
               ),
             ],
@@ -4039,8 +4056,21 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
         ),
       );
 
-      // Get building's SMS sender configuration
       final SMSService smsService = SMSService();
+      
+      // Check if platform supports SMS sync
+      if (!smsService.canSync()) {
+        Navigator.pop(context); // Close loading dialog
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(smsService.getSyncStatusMessage()),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      // Get building's SMS sender configuration
       String? smsSender = await smsService.getBuildingSMSSender(widget.selectedBuildingId!);
       
       if (smsSender == null) {
@@ -4054,54 +4084,19 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
         return;
       }
 
-      // Simulate SMS sync process (in real implementation, this would read from device SMS)
-      await Future.delayed(const Duration(seconds: 2));
+      // Sync SMS messages from device
+      List<SMSTransaction> transactions = await smsService.syncSMSMessages(widget.selectedBuildingId!);
       
-      // Sample SMS messages for demonstration
-      List<String> sampleSMS = [
-        'KCB: Dear Customer, Ksh15,000.00 has been credited to your account (Ref: MERCVENUSA11) on 15/01/2024 14:30 via M-PESA Paybill 522522. Available balance Ksh45,000.00. Thank you – KCB.',
-        'KCB: Dear Customer, Ksh12,500.00 has been credited to your account (Ref: MERCVENUSB05) on 15/01/2024 15:45 via M-PESA Paybill 522522. Available balance Ksh32,500.00. Thank you – KCB.',
-        'KCB: Dear Customer, Ksh20,000.00 has been credited to your account (Ref: MERCVENUSA07) on 15/01/2024 16:15 via M-PESA Paybill 522522. Available balance Ksh55,000.00. Thank you – KCB.',
-      ];
-
-      int processedCount = 0;
-      for (String smsBody in sampleSMS) {
-        try {
-          // Parse SMS using the new simplified method
-          Map<String, String> extracted = smsService.parseSMS(smsBody, smsSender);
-          
-          if (extracted.isNotEmpty && extracted.containsKey('amount') && extracted.containsKey('reference')) {
-            // Extract building and unit from reference
-            String reference = extracted['reference'] ?? '';
-            Map<String, String> buildingUnit = smsService.extractBuildingAndUnit(reference);
-            
-            // Create SMS transaction
-            SMSTransaction transaction = SMSTransaction(
-              id: DateTime.now().millisecondsSinceEpoch.toString(),
-              buildingId: widget.selectedBuildingId!,
-              amount: double.tryParse(extracted['amount']?.replaceAll(',', '') ?? '0') ?? 0,
-              reference: reference,
-              building: buildingUnit['building'] ?? '',
-              unit: buildingUnit['unit'] ?? '',
-              date: DateTime.now(),
-              status: 'pending', // Will be updated based on payment matching
-              paymentBreakdown: {},
-              rawSMS: smsBody,
-              bankId: extracted['bank'] ?? 'Unknown',
-            );
-
-            // Save transaction
-            await smsService.saveSMSTransaction(widget.selectedBuildingId!, transaction);
-            
-            // Process payment if unit exists
-            if (transaction.unit.isNotEmpty) {
-              await _processPaymentFromSMS(transaction);
-            }
-            
-            processedCount++;
+      // Process payments for transactions with valid units
+      int processedPayments = 0;
+      for (SMSTransaction transaction in transactions) {
+        if (transaction.unit.isNotEmpty) {
+          try {
+            await _processPaymentFromSMS(transaction);
+            processedPayments++;
+          } catch (e) {
+            print('Error processing payment for transaction ${transaction.id}: $e');
           }
-        } catch (e) {
-          print('Error processing SMS: $e');
         }
       }
 
@@ -4109,7 +4104,7 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
       
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Successfully synced $processedCount SMS transactions'),
+          content: Text('Successfully synced ${transactions.length} SMS transactions${processedPayments > 0 ? ' and processed $processedPayments payments' : ''}'),
           backgroundColor: Colors.green,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -4118,9 +4113,17 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
 
     } catch (e) {
       Navigator.pop(context); // Close loading dialog if still open
+      
+      String errorMessage = 'Error syncing SMS: $e';
+      if (e.toString().contains('permissions')) {
+        errorMessage = 'SMS permissions required. Please grant SMS permissions and try again.';
+      } else if (e.toString().contains('No SMS sender configured')) {
+        errorMessage = 'Please configure SMS sender for this building first.';
+      }
+      
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error syncing SMS: $e'),
+          content: Text(errorMessage),
           backgroundColor: Colors.red,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),

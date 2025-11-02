@@ -3,11 +3,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:telephony/telephony.dart';
 import '../models/sms_format_model.dart';
 import '../models/tenant_model.dart';
 
 class SMSService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final Telephony telephony = Telephony.instance;
   
   // Platform detection
   bool get isWeb => kIsWeb;
@@ -246,6 +248,157 @@ class SMSService {
       return 'SMS sync is not available on web. Use mobile app for SMS synchronization.';
     }
     return 'SMS sync is available';
+  }
+
+  // Real SMS reading methods
+  Future<bool> requestSMSPermissions() async {
+    if (!isMobile) return false;
+    
+    try {
+      bool? permissionsGranted = await telephony.requestPhoneAndSmsPermissions;
+      return permissionsGranted ?? false;
+    } catch (e) {
+      print('Error requesting SMS permissions: $e');
+      return false;
+    }
+  }
+
+  Future<List<SmsMessage>> readSMSMessages({
+    DateTime? startDate,
+    String? senderFilter,
+    int? limit,
+  }) async {
+    if (!isMobile) return [];
+    
+    try {
+      // Check permissions first
+      bool hasPermissions = await requestSMSPermissions();
+      if (!hasPermissions) {
+        throw Exception('SMS permissions not granted');
+      }
+
+      // Get SMS messages
+      List<SmsMessage> messages = await telephony.getInboxSms(
+        columns: [SmsColumn.ADDRESS, SmsColumn.BODY, SmsColumn.DATE],
+        sortOrder: [OrderBy(SmsColumn.DATE, sort: Sort.DESC)],
+      );
+
+      // Filter messages if needed
+      if (startDate != null) {
+        messages = messages.where((msg) {
+          DateTime? msgDate = msg.date;
+          return msgDate != null && msgDate.isAfter(startDate);
+        }).toList();
+      }
+
+      if (senderFilter != null && senderFilter.isNotEmpty) {
+        messages = messages.where((msg) {
+          String? address = msg.address;
+          return address != null && 
+                 address.toLowerCase().contains(senderFilter.toLowerCase());
+        }).toList();
+      }
+
+      if (limit != null && limit > 0) {
+        messages = messages.take(limit).toList();
+      }
+
+      return messages;
+    } catch (e) {
+      print('Error reading SMS messages: $e');
+      return [];
+    }
+  }
+
+  Future<List<SMSTransaction>> syncSMSMessages(String buildingId) async {
+    if (!isMobile) {
+      throw Exception('SMS sync is only available on mobile devices');
+    }
+
+    try {
+      // Get building's SMS sender configuration
+      String? smsSender = await getBuildingSMSSender(buildingId);
+      if (smsSender == null) {
+        throw Exception('No SMS sender configured for this building');
+      }
+
+      // Get sync start date
+      DateTime? syncStartDate = await getSyncStartDate(buildingId);
+      syncStartDate ??= DateTime.now().subtract(const Duration(days: 30)); // Default to 30 days ago
+
+      // Read SMS messages from device
+      List<SmsMessage> smsMessages = await readSMSMessages(
+        startDate: syncStartDate,
+        senderFilter: smsSender,
+        limit: 100, // Limit to prevent overwhelming
+      );
+
+      List<SMSTransaction> transactions = [];
+      
+      for (SmsMessage sms in smsMessages) {
+        try {
+          String smsBody = sms.body ?? '';
+          String sender = sms.address ?? '';
+          DateTime msgDate = sms.date ?? DateTime.now();
+
+          // Parse SMS using the existing parsing logic
+          Map<String, String> extracted = parseSMS(smsBody, sender);
+          
+          if (extracted.isNotEmpty && 
+              extracted.containsKey('amount') && 
+              extracted.containsKey('reference')) {
+            
+            // Extract building and unit from reference
+            String reference = extracted['reference'] ?? '';
+            Map<String, String> buildingUnit = extractBuildingAndUnit(reference);
+            
+            // Create SMS transaction
+            SMSTransaction transaction = SMSTransaction(
+              id: '${msgDate.millisecondsSinceEpoch}_${reference.hashCode}',
+              buildingId: buildingId,
+              amount: double.tryParse(extracted['amount']?.replaceAll(',', '') ?? '0') ?? 0,
+              reference: reference,
+              building: buildingUnit['building'] ?? '',
+              unit: buildingUnit['unit'] ?? '',
+              date: msgDate,
+              status: 'pending', // Will be updated based on payment matching
+              paymentBreakdown: {},
+              rawSMS: smsBody,
+              bankId: extracted['bank'] ?? 'Unknown',
+            );
+
+            // Check if transaction already exists
+            bool exists = await _transactionExists(buildingId, transaction.id);
+            if (!exists) {
+              // Save transaction
+              await saveSMSTransaction(buildingId, transaction);
+              transactions.add(transaction);
+            }
+          }
+        } catch (e) {
+          print('Error processing SMS: $e');
+          continue; // Skip this SMS and continue with others
+        }
+      }
+
+      return transactions;
+    } catch (e) {
+      throw Exception('Failed to sync SMS messages: $e');
+    }
+  }
+
+  Future<bool> _transactionExists(String buildingId, String transactionId) async {
+    try {
+      DocumentSnapshot doc = await _firestore
+          .collection('rentals')
+          .doc(buildingId)
+          .collection('smsTransactions')
+          .doc(transactionId)
+          .get();
+      return doc.exists;
+    } catch (e) {
+      return false;
+    }
   }
   
   // Auto-sync settings
