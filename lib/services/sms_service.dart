@@ -21,54 +21,79 @@ class SMSService {
   static const String _baseUrl = 'https://sms.hostpinnacle.co.ke/api/services/sendsms/';
   static const String _senderName = 'HOSTPINNACLE'; // Default sender name
   
-  // Hardcoded SMS formats for different banks
-  static const Map<String, Map<String, String>> bankFormats = {
-    'KCB': {
-      'amount': r'Ksh([\d,]+\.?\d*)',
-      'reference': r'Ref:\s*([A-Z0-9]+)',
-      'date': r'on\s+(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2})',
-      'paybill': r'Paybill\s+(\d+)',
+  // Bank configurations with exact sender names and SMS formats
+  static const Map<String, Map<String, dynamic>> bankFormats = {
+    'FamilyBank': {
+      'senderName': 'FamilyBank',
+      'displayName': 'Family Bank',
+      'amount': r'KES\s*([\d,]+\.?\d*)',
+      'reference': r'#([a-z0-9]+)', // Unit reference like #mercvenusE4
+      'transactionCode': r'Ref:([A-Z0-9]+)', // M-PESA code like TK4H196IDN
+      'date': r'on\s+(\d{2}-\d{2}-\d{4})',
+      'referenceType': 'building_unit', // #mercvenusE4 format
     },
-    'Family Bank': {
-      'amount': r'Ksh([\d,]+\.?\d*)',
-      'reference': r'Ref:\s*([A-Z0-9]+)',
-      'date': r'on\s+(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2})',
-      'paybill': r'Paybill\s+(\d+)',
+    'FauluBank': {
+      'senderName': 'FauluBank',
+      'displayName': 'Faulu Bank',
+      'amount': r'KES\s*([\d,]+\.?\d*)',
+      'reference': r'TxnNO\s+([A-Z0-9]+)', // Unit reference like MERCJUPITER3
+      'transactionCode': r'Ref\s+([A-Z0-9]+)', // M-PESA code like TJ49K6HTQZ
+      'date': r'on\s+(\d+\s+\d+\s+[A-Z]+\s+\d{4})',
+      'referenceType': 'building_unit', // MERCJUPITER3 format
     },
-    'Faulu': {
-      'amount': r'Ksh([\d,]+\.?\d*)',
-      'reference': r'Ref:\s*([A-Z0-9]+)',
-      'date': r'on\s+(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2})',
-      'paybill': r'Paybill\s+(\d+)',
-    },
-    'Equity': {
-      'amount': r'Ksh([\d,]+\.?\d*)',
-      'reference': r'Ref:\s*([A-Z0-9]+)',
-      'date': r'on\s+(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2})',
-      'paybill': r'Paybill\s+(\d+)',
-    },
-    'Co-operative': {
-      'amount': r'Ksh([\d,]+\.?\d*)',
-      'reference': r'Ref:\s*([A-Z0-9]+)',
-      'date': r'on\s+(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2})',
-      'paybill': r'Paybill\s+(\d+)',
+    'CARITAS MFB': {
+      'senderName': 'CARITAS MFB',
+      'displayName': 'Caritas Microfinance Bank',
+      'amount': r'KES\s*([\d,]+\.?\d*)',
+      'reference': r'For\s+([A-Z0-9]+)\.', // Unit reference like F6
+      'transactionCode': r'Transaction\s+([A-Z0-9]+)', // M-PESA code like TK3EO95ABW
+      'date': r'on\s+(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}:\d{2})',
+      'referenceType': 'unit_only', // F6 format (just unit number)
     },
   };
 
-  // Get available banks
-  List<String> getAvailableBanks() {
+  // Get available banks with display names
+  List<Map<String, String>> getAvailableBanks() {
+    return bankFormats.entries.map((entry) {
+      return {
+        'id': entry.key,
+        'name': entry.value['displayName'] as String,
+        'sender': entry.value['senderName'] as String,
+      };
+    }).toList();
+  }
+  
+  // Get bank keys only
+  List<String> getBankKeys() {
     return bankFormats.keys.toList();
   }
 
-  // Building-Bank Assignment (using sender name/phone)
-  Future<void> assignSenderToBuilding(String buildingId, String senderName) async {
+  // Building-Bank Assignment (saves bank ID, not sender name)
+  Future<void> assignBankToBuilding(String buildingId, String bankId) async {
     try {
+      // Get the sender name from bank format
+      String? senderName = bankFormats[bankId]?['senderName'] as String?;
+      
       await _firestore.collection('rentals').doc(buildingId).update({
-        'smsSender': senderName, // This could be "KCB Bank" or "+254722000000"
+        'smsBank': bankId, // Save bank ID (e.g., 'FamilyBank')
+        'smsSender': senderName, // Save sender name for filtering
         'updatedAt': FieldValue.serverTimestamp(),
       });
     } catch (e) {
-      throw Exception('Failed to assign sender to building: $e');
+      throw Exception('Failed to assign bank to building: $e');
+    }
+  }
+
+  Future<String?> getBuildingBank(String buildingId) async {
+    try {
+      DocumentSnapshot doc = await _firestore.collection('rentals').doc(buildingId).get();
+      if (doc.exists) {
+        Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+        return data['smsBank']; // Returns bank ID
+      }
+      return null;
+    } catch (e) {
+      throw Exception('Failed to get building bank: $e');
     }
   }
 
@@ -168,46 +193,100 @@ class SMSService {
     }
   }
 
-  // SMS Parsing using hardcoded formats
-  Map<String, String> parseSMS(String smsBody, String? sender) {
+  // SMS Parsing using bank-specific formats
+  Map<String, String> parseSMS(String smsBody, String? bankId) {
     Map<String, String> extracted = {};
     
-    // Detect bank first
-    String? bank = detectBankFromSMS(smsBody, sender);
-    if (bank == null) return extracted;
+    // Use provided bank ID or try to detect
+    String? bank = bankId ?? detectBankFromSMS(smsBody, null);
+    if (bank == null || !bankFormats.containsKey(bank)) return extracted;
     
-    // Use the detected bank's format
-    Map<String, String> format = bankFormats[bank]!;
+    // Use the bank's format
+    Map<String, dynamic> format = bankFormats[bank]!;
     
-    format.forEach((field, pattern) {
-      RegExp regex = RegExp(pattern, caseSensitive: false);
+    // Extract amount
+    if (format['amount'] != null) {
+      RegExp regex = RegExp(format['amount'] as String, caseSensitive: false);
       Match? match = regex.firstMatch(smsBody);
       if (match != null && match.groupCount > 0) {
-        extracted[field] = match.group(1)!.replaceAll(',', ''); // Remove commas from amounts
+        extracted['amount'] = match.group(1)!.replaceAll(',', '');
       }
-    });
+    }
     
-    // Add detected bank info
+    // Extract reference (unit reference like MERCJUPITER3, #mercvenusE4, or F6)
+    if (format['reference'] != null) {
+      RegExp regex = RegExp(format['reference'] as String, caseSensitive: false);
+      Match? match = regex.firstMatch(smsBody);
+      if (match != null && match.groupCount > 0) {
+        extracted['reference'] = match.group(1)!;
+      }
+    }
+    
+    // Extract transaction code (M-PESA transaction code)
+    if (format['transactionCode'] != null) {
+      RegExp regex = RegExp(format['transactionCode'] as String, caseSensitive: false);
+      Match? match = regex.firstMatch(smsBody);
+      if (match != null && match.groupCount > 0) {
+        extracted['transactionCode'] = match.group(1)!;
+      }
+    }
+    
+    // Extract date
+    if (format['date'] != null) {
+      RegExp regex = RegExp(format['date'] as String, caseSensitive: false);
+      Match? match = regex.firstMatch(smsBody);
+      if (match != null && match.groupCount > 0) {
+        extracted['date'] = match.group(1)!;
+      }
+    }
+    
+    // Add bank info and reference type
     extracted['bank'] = bank;
+    extracted['referenceType'] = format['referenceType'] as String;
     
     return extracted;
   }
 
-  // Extract building and unit from reference
-  Map<String, String> extractBuildingAndUnit(String reference) {
-    // Extract building prefix (e.g., MERCVENUS from MERCVENUSA11)
-    RegExp buildingRegex = RegExp(r'^([A-Z]+)');
-    Match? buildingMatch = buildingRegex.firstMatch(reference);
-    String building = buildingMatch?.group(1) ?? '';
+  // Extract unit from reference (building name is ignored for matching)
+  Map<String, String> extractBuildingAndUnit(String reference, String referenceType) {
+    String building = '';
+    String unit = '';
     
-    // Extract unit suffix (e.g., A11 from MERCVENUSA11)
-    RegExp unitRegex = RegExp(r'([A-Z0-9]+)$');
-    Match? unitMatch = unitRegex.firstMatch(reference.replaceFirst(building, ''));
-    String unit = unitMatch?.group(1) ?? '';
+    if (referenceType == 'unit_only') {
+      // CARITAS format: Just unit number (e.g., "F6")
+      unit = reference.trim().toUpperCase();
+      building = ''; // No building in reference
+    } else if (referenceType == 'building_unit') {
+      // FamilyBank format: MERCJUPITER3 or FauluBank format: mercvenusE4
+      reference = reference.toUpperCase().replaceAll('#', '');
+      
+      // Extract unit number only (we don't need building name to match)
+      // Pattern: Extract the last part that looks like a unit (letter + numbers or just numbers)
+      // Examples: MERCJUPITER3 -> 3, MERCVENUSE4 -> E4, mercvenusE4 -> E4
+      
+      // Look for MERC prefix and remove it
+      if (reference.startsWith('MERC')) {
+        reference = reference.substring(4); // Remove 'MERC'
+      }
+      
+      // Extract unit (last part with optional letter + numbers)
+      // Matches: 3, E4, A11, B05, etc.
+      RegExp unitRegex = RegExp(r'([A-Z]?\d+)$');
+      Match? unitMatch = unitRegex.firstMatch(reference);
+      
+      if (unitMatch != null) {
+        unit = unitMatch.group(1)!;
+        // Store building name for reference only (not used for matching)
+        building = reference.substring(0, reference.length - unit.length);
+      } else {
+        // If no clear unit pattern, treat whole thing as unit
+        unit = reference;
+      }
+    }
     
     return {
-      'building': building,
-      'unit': unit,
+      'building': building, // Stored for display only
+      'unit': unit, // This is what we use for matching payments
     };
   }
 
@@ -340,14 +419,19 @@ class SMSService {
 
       List<SMSTransaction> transactions = [];
       
+      // Get the bank ID for this building
+      String? bankId = await getBuildingBank(buildingId);
+      if (bankId == null) {
+        throw Exception('No bank configured for this building');
+      }
+
       for (SmsMessage sms in smsMessages) {
         try {
           String smsBody = sms.body ?? '';
-          String sender = sms.address ?? '';
           DateTime msgDate = sms.date ?? DateTime.now();
 
-          // Parse SMS using the existing parsing logic
-          Map<String, String> extracted = parseSMS(smsBody, sender);
+          // Parse SMS using the bank-specific format
+          Map<String, String> extracted = parseSMS(smsBody, bankId);
           
           if (extracted.isNotEmpty && 
               extracted.containsKey('amount') && 
@@ -355,21 +439,23 @@ class SMSService {
             
             // Extract building and unit from reference
             String reference = extracted['reference'] ?? '';
-            Map<String, String> buildingUnit = extractBuildingAndUnit(reference);
+            String transactionCode = extracted['transactionCode'] ?? reference; // M-PESA transaction code
+            String referenceType = extracted['referenceType'] ?? 'building_unit';
+            Map<String, String> buildingUnit = extractBuildingAndUnit(reference, referenceType);
             
             // Create SMS transaction
             SMSTransaction transaction = SMSTransaction(
               id: '${msgDate.millisecondsSinceEpoch}_${reference.hashCode}',
               buildingId: buildingId,
               amount: double.tryParse(extracted['amount']?.replaceAll(',', '') ?? '0') ?? 0,
-              reference: reference,
-              building: buildingUnit['building'] ?? '',
-              unit: buildingUnit['unit'] ?? '',
+              reference: transactionCode, // Store M-PESA transaction code (TJ49K6HTQZ, etc.)
+              building: buildingUnit['building'] ?? '', // Stored for display only
+              unit: buildingUnit['unit'] ?? '', // This is used for payment matching
               date: msgDate,
               status: 'pending', // Will be updated based on payment matching
               paymentBreakdown: {},
               rawSMS: smsBody,
-              bankId: extracted['bank'] ?? 'Unknown',
+              bankId: extracted['bank'] ?? bankId,
             );
 
             // Check if transaction already exists

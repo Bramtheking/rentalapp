@@ -3715,12 +3715,39 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
                             ),
                           ),
                           const Spacer(),
-                          Text(
-                            'Last sync: 2 min ago',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[500],
-                            ),
+                          // Real sync status - only show if there's actual data
+                          FutureBuilder<DateTime?>(
+                            future: widget.selectedBuildingId != null 
+                                ? SMSService().getSyncStartDate(widget.selectedBuildingId!)
+                                : null,
+                            builder: (context, snapshot) {
+                              if (snapshot.hasData && snapshot.data != null) {
+                                final syncStartDate = snapshot.data!;
+                                final now = DateTime.now();
+                                final difference = now.difference(syncStartDate);
+                                
+                                String syncText;
+                                if (difference.inDays > 0) {
+                                  syncText = 'Sync from ${difference.inDays}d ago';
+                                } else if (difference.inHours > 0) {
+                                  syncText = 'Sync from ${difference.inHours}h ago';
+                                } else if (difference.inMinutes > 0) {
+                                  syncText = 'Sync from ${difference.inMinutes}m ago';
+                                } else {
+                                  syncText = 'Sync configured';
+                                }
+                                
+                                return Text(
+                                  syncText,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[500],
+                                  ),
+                                );
+                              }
+                              // Don't show anything if sync is not configured
+                              return const SizedBox.shrink();
+                            },
                           ),
                         ],
                       ),
@@ -4211,11 +4238,11 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
         return;
       }
       
-      // Get current SMS sender
-      String? currentSender = await smsService.getBuildingSMSSender(widget.selectedBuildingId!);
+      // Get current bank selection
+      String? currentBank = await smsService.getBuildingBank(widget.selectedBuildingId!);
       
-      TextEditingController senderController = TextEditingController(text: currentSender ?? '');
-      List<String> availableBanks = smsService.getAvailableBanks();
+      List<Map<String, String>> availableBanks = smsService.getAvailableBanks();
+      String? selectedBank = currentBank;
       
       showDialog(
         context: context,
@@ -4255,75 +4282,130 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
               ),
             ],
           ),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Enter the name or phone number that appears as the sender of payment SMS messages:',
-                  style: TextStyle(fontSize: 14),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: senderController,
-                  decoration: InputDecoration(
-                    labelText: 'SMS Sender Name/Number',
-                    hintText: 'e.g., "KCB Bank" or "+254722000000"',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
+          content: StatefulBuilder(
+            builder: (context, setState) {
+              return SizedBox(
+                width: double.maxFinite,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Select your bank to enable automatic SMS payment processing:',
+                      style: TextStyle(fontSize: 14),
                     ),
-                    prefixIcon: const Icon(Icons.person),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF667eea).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: const Color(0xFF667eea).withOpacity(0.3),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      value: selectedBank,
+                      decoration: InputDecoration(
+                        labelText: 'Select Bank',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        prefixIcon: const Icon(Icons.account_balance),
+                      ),
+                      items: [
+                        const DropdownMenuItem<String>(
+                          value: null,
+                          child: Text('-- Select a Bank --'),
+                        ),
+                        ...availableBanks.map((bank) {
+                          return DropdownMenuItem<String>(
+                            value: bank['id'],
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF667eea),
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        bank['name']!,
+                                        style: const TextStyle(fontWeight: FontWeight.w600),
+                                      ),
+                                      Text(
+                                        'Sender: ${bank['sender']}',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey[600],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+                      ],
+                      onChanged: (value) {
+                        setState(() {
+                          selectedBank = value;
+                        });
+                      },
                     ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF667eea).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: const Color(0xFF667eea).withOpacity(0.3),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(
-                            Icons.info_outline,
-                            color: const Color(0xFF667eea),
-                            size: 20,
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.info_outline,
+                                color: const Color(0xFF667eea),
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              const Text(
+                                'How it works:',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(height: 8),
                           const Text(
-                            'Supported Banks:',
-                            style: TextStyle(fontWeight: FontWeight.bold),
+                            '• Select your bank from the list above',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                          const Text(
+                            '• The app will read SMS from that bank',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                          const Text(
+                            '• Payments will be automatically processed',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                          const Text(
+                            '• Your selection is saved and remembered',
+                            style: TextStyle(fontSize: 12),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 4,
-                        children: availableBanks.map((bank) => Chip(
-                          label: Text(bank, style: const TextStyle(fontSize: 12)),
-                          backgroundColor: Colors.white,
-                          side: BorderSide(color: const Color(0xFF667eea).withOpacity(0.3)),
-                        )).toList(),
+                        ),
                       ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'The app will automatically detect the bank format from SMS content.',
-                        style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              );
+            },
           ),
           actions: [
             TextButton(
@@ -4331,29 +4413,19 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
               child: const Text('Cancel'),
             ),
             ElevatedButton(
-              onPressed: () async {
+              onPressed: selectedBank == null ? null : () async {
                 try {
-                  String senderName = senderController.text.trim();
-                  if (senderName.isNotEmpty) {
-                    await smsService.assignSenderToBuilding(widget.selectedBuildingId!, senderName);
-                  } else {
-                    // Remove sender assignment
-                    await FirebaseFirestore.instance
-                        .collection('rentals')
-                        .doc(widget.selectedBuildingId!)
-                        .update({
-                      'smsSender': FieldValue.delete(),
-                      'updatedAt': FieldValue.serverTimestamp(),
-                    });
-                  }
+                  // Save the selected bank
+                  await smsService.assignBankToBuilding(widget.selectedBuildingId!, selectedBank!);
                   
                   Navigator.pop(context);
                   
+                  // Get bank display name
+                  String bankName = availableBanks.firstWhere((b) => b['id'] == selectedBank)['name']!;
+                  
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text(senderName.isNotEmpty 
-                          ? 'SMS sender updated to: $senderName'
-                          : 'SMS sender removed'),
+                      content: Text('Bank configured: $bankName'),
                       backgroundColor: Colors.green,
                       behavior: SnackBarBehavior.floating,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -4363,7 +4435,7 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
                   Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('Error updating SMS sender: $e'),
+                      content: Text('Error configuring bank: $e'),
                       backgroundColor: Colors.red,
                       behavior: SnackBarBehavior.floating,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -4376,7 +4448,11 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
-              child: const Text('Save Sender'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF667eea),
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Save Bank Selection'),
             ),
           ],
         ),
@@ -4782,14 +4858,94 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
                     ],
                   ),
                 ),
-                // Sample Receipt Data
+                // Real Receipt Data
                 Expanded(
-                  child: ListView(
-                    children: [
-                      _buildReceiptRow('RCP-001', 'John Doe', 'A-101', '2024-01-15', 'KES 25,000', 'M-Pesa', 'Generated'),
-                      _buildReceiptRow('RCP-002', 'Jane Smith', 'B-205', '2024-01-14', 'KES 30,000', 'Bank Transfer', 'Generated'),
-                    ],
-                  ),
+                  child: widget.selectedBuildingId == null
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.business_outlined,
+                                size: 64,
+                                color: Colors.grey[400],
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'Select a building to view receipts',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : StreamBuilder<QuerySnapshot>(
+                          stream: _getReceiptsStream(),
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState == ConnectionState.waiting) {
+                              return const Center(
+                                child: CircularProgressIndicator(
+                                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF667eea)),
+                                ),
+                              );
+                            }
+
+                            if (snapshot.hasError) {
+                              return Center(
+                                child: Text(
+                                  'Error: ${snapshot.error}',
+                                  style: const TextStyle(color: Colors.red),
+                                ),
+                              );
+                            }
+
+                            final receipts = snapshot.data?.docs ?? [];
+
+                            if (receipts.isEmpty) {
+                              return Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.receipt_outlined,
+                                      size: 64,
+                                      color: Colors.grey[400],
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      'No receipts found',
+                                      style: TextStyle(
+                                        fontSize: 18,
+                                        color: Colors.grey[600],
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Generate receipts for payments to see them here',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: Colors.grey[500],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }
+
+                            return ListView.builder(
+                              itemCount: receipts.length,
+                              itemBuilder: (context, index) {
+                                final receipt = receipts[index];
+                                final data = receipt.data() as Map<String, dynamic>;
+                                
+                                return _buildReceiptRowFromData(data);
+                              },
+                            );
+                          },
+                        ),
                 ),
               ],
             ),
@@ -4834,7 +4990,74 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
             child: Row(
               children: [
                 TextButton(
-                  onPressed: () {},
+                  onPressed: () => _viewReceipt(receiptNo),
+                  child: const Text('View'),
+                ),
+                TextButton(
+                  onPressed: () => _downloadReceipt(receiptNo),
+                  child: const Text('Download'),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReceiptRowFromData(Map<String, dynamic> data) {
+    String receiptNo = data['receiptNo'] ?? 'N/A';
+    String tenantName = data['tenant']?['name'] ?? 'Unknown';
+    String unit = data['tenant']?['unitNumber'] ?? 'N/A';
+    String paymentMethod = data['payment']?['method'] ?? 'N/A';
+    double amount = (data['payment']?['amount'] ?? 0).toDouble();
+    
+    DateTime? paymentDate;
+    try {
+      paymentDate = DateTime.parse(data['date'] ?? '');
+    } catch (e) {
+      paymentDate = DateTime.now();
+    }
+    
+    String formattedDate = '${paymentDate.day}/${paymentDate.month}/${paymentDate.year}';
+    String formattedAmount = 'KES ${amount.toStringAsFixed(0)}';
+    
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: Colors.grey.shade200),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(flex: 1, child: Text(receiptNo, style: const TextStyle(fontWeight: FontWeight.w500))),
+          Expanded(flex: 2, child: Text(tenantName)),
+          Expanded(flex: 1, child: Text(unit)),
+          Expanded(flex: 2, child: Text(formattedDate)),
+          Expanded(flex: 2, child: Text(formattedAmount, style: const TextStyle(fontWeight: FontWeight.w600))),
+          Expanded(flex: 2, child: Text(paymentMethod)),
+          Expanded(
+            flex: 1,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.green,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Text(
+                'Generated',
+                style: TextStyle(color: Colors.white, fontSize: 12),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Row(
+              children: [
+                TextButton(
+                  onPressed: () => _viewReceipt(receiptNo),
                   child: const Text('View'),
                 ),
                 TextButton(
@@ -4850,40 +5073,29 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
   }
 
   Stream<QuerySnapshot> _getPaymentsStream() {
-    // Get current user's rental name
-    return FirebaseAuth.instance.authStateChanges().asyncExpand((user) async* {
-      if (user != null) {
-        try {
-          final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
-          final userData = userDoc.data();
-          final rentalName = userData?['rental'] as String?;
-          
-          if (rentalName != null && rentalName.isNotEmpty) {
-            // Get payments from the user's rental subcollection
-            yield* FirebaseFirestore.instance
-                .collection('rentals')
-                .doc(rentalName)
-                .collection('payments')
-                .orderBy('createdAt', descending: true)
-                .snapshots();
-          } else {
-            // No rental assigned - return empty stream
-            yield* Stream.value(
-              await FirebaseFirestore.instance.collection('empty').limit(0).get()
-            );
-          }
-        } catch (e) {
-          print('Error getting payments stream: $e');
-          yield* Stream.value(
-            await FirebaseFirestore.instance.collection('empty').limit(0).get()
-          );
-        }
-      } else {
-        yield* Stream.value(
-          await FirebaseFirestore.instance.collection('empty').limit(0).get()
-        );
-      }
-    });
+    if (widget.selectedBuildingId == null) {
+      return Stream.value(FirebaseFirestore.instance.collection('empty').limit(0).get()).asyncMap((future) => future);
+    }
+    
+    return FirebaseFirestore.instance
+        .collection('rentals')
+        .doc(widget.selectedBuildingId!)
+        .collection('payments')
+        .orderBy('createdAt', descending: true)
+        .snapshots();
+  }
+
+  Stream<QuerySnapshot> _getReceiptsStream() {
+    if (widget.selectedBuildingId == null) {
+      return Stream.value(FirebaseFirestore.instance.collection('empty').limit(0).get()).asyncMap((future) => future);
+    }
+    
+    return FirebaseFirestore.instance
+        .collection('rentals')
+        .doc(widget.selectedBuildingId!)
+        .collection('receipts')
+        .orderBy('generatedAt', descending: true)
+        .snapshots();
   }
 
   List<QueryDocumentSnapshot> _filterPayments(List<QueryDocumentSnapshot> payments) {
@@ -5241,6 +5453,34 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
         ],
       ),
     );
+  }
+
+  void _viewReceipt(String receiptNo) async {
+    try {
+      final receiptService = ReceiptService();
+      Map<String, dynamic>? receiptData = await receiptService.getReceiptByNumber(
+        widget.selectedBuildingId!,
+        receiptNo,
+      );
+      
+      if (receiptData != null) {
+        _showReceiptPreview(receiptData);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Receipt not found'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error loading receipt: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   void _downloadReceipt(String receiptNo) async {
