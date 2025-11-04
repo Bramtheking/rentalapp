@@ -23,7 +23,8 @@ class _SMSFormatEditorScreenState extends State<SMSFormatEditorScreen> {
   Future<void> _loadFormats() async {
     try {
       // Get available banks from the hardcoded formats
-      List<String> bankNames = _smsService.getAvailableBanks();
+      List<Map<String, String>> banks = _smsService.getAvailableBanks();
+      List<String> bankNames = banks.map((b) => b['name']!).toList();
       
       // Convert to SMSFormat objects for display
       List<SMSFormat> formats = bankNames.map((bankName) => SMSFormat(
