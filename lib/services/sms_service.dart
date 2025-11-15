@@ -2,14 +2,15 @@ import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:flutter_sms_inbox/flutter_sms_inbox.dart';
-import 'package:flutter_sms/flutter_sms.dart' as sms;
+import 'package:flutter_sms_inbox/flutter_sms_inbox.dart' as inbox;
+import 'package:telephony/telephony.dart';
 import '../models/sms_format_model.dart';
 import '../models/tenant_model.dart';
 
 class SMSService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final SmsQuery _query = SmsQuery();
+  final inbox.SmsQuery _query = inbox.SmsQuery();
+  final Telephony telephony = Telephony.instance;
   
   // Platform detection
   bool get isWeb => kIsWeb;
@@ -337,7 +338,7 @@ class SMSService {
     }
   }
 
-  Future<List<SmsMessage>> readSMSMessages({
+  Future<List<inbox.SmsMessage>> readSMSMessages({
     DateTime? startDate,
     String? senderFilter,
     int? limit,
@@ -352,8 +353,8 @@ class SMSService {
       }
 
       // Get SMS messages from inbox
-      List<SmsMessage> messages = await _query.querySms(
-        kinds: [SmsQueryKind.inbox],
+      List<inbox.SmsMessage> messages = await _query.querySms(
+        kinds: [inbox.SmsQueryKind.inbox],
         count: limit ?? 100,
       );
 
@@ -405,7 +406,7 @@ class SMSService {
       syncStartDate ??= DateTime.now().subtract(const Duration(days: 30)); // Default to 30 days ago
 
       // Read SMS messages from device
-      List<SmsMessage> smsMessages = await readSMSMessages(
+      List<inbox.SmsMessage> smsMessages = await readSMSMessages(
         startDate: syncStartDate,
         senderFilter: smsSender,
         limit: 100, // Limit to prevent overwhelming
@@ -419,7 +420,7 @@ class SMSService {
         throw Exception('No bank configured for this building');
       }
 
-      for (SmsMessage sms in smsMessages) {
+      for (inbox.SmsMessage sms in smsMessages) {
         try {
           String smsBody = sms.body ?? '';
           DateTime msgDate = sms.date ?? DateTime.now();
@@ -559,8 +560,8 @@ class SMSService {
     if (!isMobile) return false;
     
     try {
-      PermissionStatus status = await Permission.sms.request();
-      return status == PermissionStatus.granted;
+      bool? permissionsGranted = await telephony.requestPhoneAndSmsPermissions;
+      return permissionsGranted ?? false;
     } catch (e) {
       print('Error requesting SMS send permissions: $e');
       return false;
@@ -622,12 +623,14 @@ class SMSService {
       int selectedSimSlot = simSlot ?? await getPreferredSimSlot();
 
       // Send SMS using device with SIM slot selection
-      // Note: flutter_sms will use the default SIM or show SIM selector dialog
-      String result = await sms.sendSMS(
+      // Telephony package sends directly using the specified SIM
+      await telephony.sendSms(
+        to: cleanPhone,
         message: message,
-        recipients: [cleanPhone],
-        sendDirect: false, // false = shows Android's SMS app with SIM selector
+        isMultipart: message.length > 160,
       );
+      
+      String result = 'SMS sent successfully';
       
       // Log SMS to Firestore
       await _logSMSToFirestore(
@@ -711,13 +714,18 @@ class SMSService {
       // Get SIM slot preference if not specified
       int selectedSimSlot = simSlot ?? await getPreferredSimSlot();
 
-      // Send SMS to all recipients at once
-      // Note: flutter_sms will use the default SIM or show SIM selector dialog
-      String result = await sms.sendSMS(
-        message: message,
-        recipients: cleanPhones,
-        sendDirect: false, // false = shows Android's SMS app with SIM selector
-      );
+      // Send SMS to all recipients one by one
+      for (String phone in cleanPhones) {
+        await telephony.sendSms(
+          to: phone,
+          message: message,
+          isMultipart: message.length > 160,
+        );
+        // Small delay to avoid overwhelming the system
+        await Future.delayed(const Duration(milliseconds: 500));
+      }
+      
+      String result = 'Bulk SMS sent successfully';
       
       // Log bulk SMS to Firestore
       for (String phone in cleanPhones) {

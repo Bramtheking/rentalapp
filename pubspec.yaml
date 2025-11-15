@@ -53,8 +53,8 @@ dependencies:
   permission_handler: ^11.0.1
   flutter_sms_inbox: ^1.0.2
   
-  # SMS sending (direct from device)
-  flutter_sms: ^2.3.3
+  # SMS sending (direct from device) - using telephony instead
+  telephony: ^0.2.0
 
 dev_dependencies:
   flutter_test:
