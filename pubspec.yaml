@@ -52,6 +52,9 @@ dependencies:
   # SMS reading and permissions
   permission_handler: ^11.0.1
   flutter_sms_inbox: ^1.0.2
+  
+  # SMS sending (direct from device)
+  flutter_sms: ^2.3.3
 
 dev_dependencies:
   flutter_test:

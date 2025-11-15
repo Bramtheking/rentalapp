@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_sms_inbox/flutter_sms_inbox.dart';
 import '../services/auth_service.dart';
 import '../services/dashboard_service.dart';
 import '../services/sms_service.dart';
@@ -14,7 +15,6 @@ import 'tenants_screen.dart';
 import 'units_screen.dart';
 import 'sms_screen.dart';
 import 'expenses_screen.dart';
-import 'reports_screen.dart';
 import 'reports_screen.dart';
 import 'payment_structure_screen.dart';
 import 'unit_approval_screen.dart';
@@ -1161,15 +1161,20 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: 32),
+            const SizedBox(height: 24),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Column(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: GridView.count(
+                shrinkWrap: true,
+                crossAxisCount: 2,
+                mainAxisSpacing: 12,
+                crossAxisSpacing: 12,
+                childAspectRatio: 1.1,
+                physics: const NeverScrollableScrollPhysics(),
                 children: [
-                  _buildQuickActionItem(
+                  _buildQuickActionCard(
                     Icons.people_rounded,
-                    'Add Tenant',
-                    'Add a new tenant to your property',
+                    'Tenants',
                     const Color(0xFF667eea),
                     () {
                       Navigator.pop(context);
@@ -1179,11 +1184,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       _saveSelectedTab(2);
                     },
                   ),
-                  _buildQuickActionItem(
+                  _buildQuickActionCard(
                     Icons.home_work_rounded,
-                    'Add Unit',
-                    'Create a new rental unit',
-                    const Color(0xFF667eea),
+                    'Units',
+                    const Color(0xFF764ba2),
                     () {
                       Navigator.pop(context);
                       setState(() {
@@ -1192,160 +1196,101 @@ class _HomeScreenState extends State<HomeScreen> {
                       _saveSelectedTab(3);
                     },
                   ),
-                  _buildQuickActionItem(
-                    Icons.payment_rounded,
-                    'Record Payment',
-                    'Log a rent payment',
-                    const Color(0xFF667eea),
+                  _buildQuickActionCard(
+                    Icons.sms_rounded,
+                    'SMS',
+                    const Color(0xFFf093fb),
                     () {
                       Navigator.pop(context);
                       setState(() {
-                        _selectedIndex = 1;
+                        _selectedIndex = 4;
                       });
-                      _saveSelectedTab(1);
+                      _saveSelectedTab(4);
                     },
                   ),
-                  _buildQuickActionItem(
-                    Icons.receipt_long_rounded,
-                    'Add Expense',
-                    'Track property expenses',
-                    const Color(0xFF667eea),
+                  _buildQuickActionCard(
+                    Icons.analytics_rounded,
+                    'Reports',
+                    const Color(0xFFf5576c),
                     () {
                       Navigator.pop(context);
                       setState(() {
-                        _selectedIndex = 5;
+                        _selectedIndex = 6;
                       });
-                      _saveSelectedTab(5);
+                      _saveSelectedTab(6);
                     },
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildQuickActionItem(
+  Widget _buildQuickActionCard(
     IconData icon,
     String title,
-    String subtitle,
     Color color,
     VoidCallback onTap,
   ) {
-    final gradientColors = [
-      [const Color(0xFF667eea), const Color(0xFF764ba2)], // Blue-Purple
-      [const Color(0xFFf093fb), const Color(0xFFf5576c)], // Pink-Red
-      [const Color(0xFF4facfe), const Color(0xFF00f2fe)], // Blue-Cyan
-      [const Color(0xFF43e97b), const Color(0xFF38f9d7)], // Green-Teal
-    ];
-    
-    final gradientIndex = title.hashCode % gradientColors.length;
-    final selectedGradient = gradientColors[gradientIndex];
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(24),
-          onTap: onTap,
-          child: Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(24),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  selectedGradient[0].withOpacity(0.1),
-                  selectedGradient[1].withOpacity(0.05),
-                ],
-              ),
-              border: Border.all(
-                color: selectedGradient[0].withOpacity(0.2),
-                width: 1.5,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: selectedGradient[0].withOpacity(0.1),
-                  blurRadius: 15,
-                  offset: const Offset(0, 6),
-                ),
-                BoxShadow(
-                  color: Colors.white.withOpacity(0.7),
-                  blurRadius: 10,
-                  offset: const Offset(-2, -2),
-                ),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                color.withOpacity(0.15),
+                color.withOpacity(0.05),
               ],
             ),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(20),
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: selectedGradient,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: selectedGradient[0].withOpacity(0.3),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Icon(
-                    icon,
-                    color: Colors.white,
-                    size: 26,
-                  ),
-                ),
-                const SizedBox(width: 20),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: const TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF1F2937),
-                          letterSpacing: 0.3,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        subtitle,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey[600],
-                          fontWeight: FontWeight.w400,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: selectedGradient[0].withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    Icons.arrow_forward_ios_rounded,
-                    size: 16,
-                    color: selectedGradient[0],
-                  ),
-                ),
-              ],
+            border: Border.all(
+              color: color.withOpacity(0.3),
+              width: 1.5,
             ),
+            boxShadow: [
+              BoxShadow(
+                color: color.withOpacity(0.1),
+                blurRadius: 8,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.2),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  icon,
+                  color: color,
+                  size: 32,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                  letterSpacing: 0.3,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
           ),
         ),
       ),
@@ -3619,19 +3564,53 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
                           ],
                         ),
                       ),
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: Colors.white.withOpacity(0.3),
+                      Row(
+                        children: [
+                          Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: Colors.white.withOpacity(0.3),
+                              ),
+                            ),
+                            child: IconButton(
+                              icon: const Icon(Icons.science_rounded, color: Colors.white),
+                              onPressed: () => _showTestModeDialog(),
+                              tooltip: 'Test Mode - Custom SMS Sync',
+                            ),
                           ),
-                        ),
-                        child: IconButton(
-                          icon: const Icon(Icons.sync_rounded, color: Colors.white),
-                          onPressed: () => _syncSMSMessages(),
-                          tooltip: 'Sync SMS Messages',
-                        ),
+                          const SizedBox(width: 8),
+                          Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: Colors.white.withOpacity(0.3),
+                              ),
+                            ),
+                            child: IconButton(
+                              icon: const Icon(Icons.delete_sweep_rounded, color: Colors.white),
+                              onPressed: () => _clearAllSMSTransactions(),
+                              tooltip: 'Clear All SMS Transactions',
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: Colors.white.withOpacity(0.3),
+                              ),
+                            ),
+                            child: IconButton(
+                              icon: const Icon(Icons.sync_rounded, color: Colors.white),
+                              onPressed: () => _syncSMSMessages(),
+                              tooltip: 'Sync SMS Messages',
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -4159,6 +4138,512 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
     }
   }
 
+  void _clearAllSMSTransactions() async {
+    if (widget.selectedBuildingId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a building first'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Show confirmation dialog
+    bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Icon(Icons.warning_rounded, color: Colors.orange[700]),
+            const SizedBox(width: 12),
+            const Text('Clear All SMS Transactions?'),
+          ],
+        ),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('This will permanently delete all SMS transactions for this building.'),
+            SizedBox(height: 12),
+            Text(
+              'This action cannot be undone.',
+              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('Clear All'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      // Show loading
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF667eea)),
+              ),
+              SizedBox(height: 16),
+              Text('Clearing SMS transactions...'),
+            ],
+          ),
+        ),
+      );
+
+      // Get all SMS transactions
+      final snapshot = await FirebaseFirestore.instance
+          .collection('rentals')
+          .doc(widget.selectedBuildingId!)
+          .collection('smsTransactions')
+          .get();
+
+      // Delete all transactions in batch
+      WriteBatch batch = FirebaseFirestore.instance.batch();
+      for (var doc in snapshot.docs) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+
+      Navigator.pop(context); // Close loading dialog
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Successfully cleared ${snapshot.docs.length} SMS transactions'),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
+      );
+    } catch (e) {
+      Navigator.pop(context); // Close loading dialog if still open
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error clearing SMS transactions: $e'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
+      );
+    }
+  }
+
+  void _showTestModeDialog() async {
+    if (widget.selectedBuildingId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a building first'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final SMSService smsService = SMSService();
+    List<Map<String, String>> availableBanks = smsService.getAvailableBanks();
+    
+    String? selectedBank;
+    final phoneController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF667eea), Color(0xFF764ba2)],
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Center(
+                      child: Icon(
+                        Icons.science_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Test Mode'),
+                        Text(
+                          'Sync from custom phone number',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.normal),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: Colors.orange.withOpacity(0.3),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.info_outline,
+                            color: Colors.orange[700],
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text(
+                              'Test mode allows you to sync SMS from any phone number using a specific bank format.',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    const Text(
+                      'Enter the phone number that will send test SMS:',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: phoneController,
+                      decoration: InputDecoration(
+                        labelText: 'Phone Number',
+                        hintText: 'e.g., +254712345678 or TESTBANK',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        prefixIcon: const Icon(Icons.phone),
+                      ),
+                      keyboardType: TextInputType.phone,
+                    ),
+                    const SizedBox(height: 20),
+                    const Text(
+                      'Select the bank format to use:',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      value: selectedBank,
+                      decoration: InputDecoration(
+                        labelText: 'Bank Format',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        prefixIcon: const Icon(Icons.account_balance),
+                      ),
+                      items: [
+                        const DropdownMenuItem<String>(
+                          value: null,
+                          child: Text('-- Select Bank Format --'),
+                        ),
+                        ...availableBanks.map((bank) {
+                          return DropdownMenuItem<String>(
+                            value: bank['id'],
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF667eea),
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        bank['name']!,
+                                        style: const TextStyle(fontWeight: FontWeight.w600),
+                                      ),
+                                      Text(
+                                        'Format: ${bank['sender']}',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey[600],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+                      ],
+                      onChanged: (value) {
+                        setDialogState(() {
+                          selectedBank = value;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF667eea).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: const Color(0xFF667eea).withOpacity(0.3),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.lightbulb_outline,
+                                color: const Color(0xFF667eea),
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              const Text(
+                                'How it works:',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            '• Enter any phone number (e.g., your test number)',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                          const Text(
+                            '• Select which bank format to parse SMS with',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                          const Text(
+                            '• Send SMS from that number in the bank format',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                          const Text(
+                            '• Click sync to read and process those SMS',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: (selectedBank == null || phoneController.text.trim().isEmpty) 
+                      ? null 
+                      : () async {
+                    Navigator.pop(context);
+                    await _syncSMSInTestMode(
+                      phoneController.text.trim(),
+                      selectedBank!,
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF667eea),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Text('Sync Test SMS'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _syncSMSInTestMode(String phoneNumber, String bankId) async {
+    try {
+      // Show loading dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF667eea)),
+              ),
+              const SizedBox(height: 16),
+              const Text('Syncing Test SMS...'),
+              const SizedBox(height: 8),
+              Text(
+                'Reading SMS from $phoneNumber',
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      final SMSService smsService = SMSService();
+      
+      // Check if platform supports SMS sync
+      if (!smsService.canSync()) {
+        Navigator.pop(context); // Close loading dialog
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(smsService.getSyncStatusMessage()),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      // Read SMS messages from the specified phone number
+      List<SmsMessage> smsMessages = await smsService.readSMSMessages(
+        senderFilter: phoneNumber,
+        limit: 50,
+      );
+
+      List<SMSTransaction> transactions = [];
+      
+      for (SmsMessage sms in smsMessages) {
+        try {
+          String smsBody = sms.body ?? '';
+          DateTime msgDate = sms.date ?? DateTime.now();
+
+          // Parse SMS using the selected bank format
+          Map<String, String> extracted = smsService.parseSMS(smsBody, bankId);
+          
+          if (extracted.isNotEmpty && 
+              extracted.containsKey('amount') && 
+              extracted.containsKey('reference')) {
+            
+            // Extract building and unit from reference
+            String reference = extracted['reference'] ?? '';
+            String transactionCode = extracted['transactionCode'] ?? reference;
+            String referenceType = extracted['referenceType'] ?? 'building_unit';
+            Map<String, String> buildingUnit = smsService.extractBuildingAndUnit(reference, referenceType);
+            
+            // Create SMS transaction
+            SMSTransaction transaction = SMSTransaction(
+              id: '${msgDate.millisecondsSinceEpoch}_${reference.hashCode}',
+              buildingId: widget.selectedBuildingId!,
+              amount: double.tryParse(extracted['amount']?.replaceAll(',', '') ?? '0') ?? 0,
+              reference: transactionCode,
+              building: buildingUnit['building'] ?? '',
+              unit: buildingUnit['unit'] ?? '',
+              date: msgDate,
+              status: 'pending',
+              paymentBreakdown: {},
+              rawSMS: smsBody,
+              bankId: extracted['bank'] ?? bankId,
+            );
+
+            // Check if transaction already exists
+            bool exists = await _transactionExists(widget.selectedBuildingId!, transaction.id);
+            if (!exists) {
+              // Save transaction
+              await smsService.saveSMSTransaction(widget.selectedBuildingId!, transaction);
+              transactions.add(transaction);
+              
+              // Try to process payment
+              if (transaction.unit.isNotEmpty) {
+                try {
+                  await _processPaymentFromSMS(transaction);
+                } catch (e) {
+                  print('Error processing payment: $e');
+                }
+              }
+            }
+          }
+        } catch (e) {
+          print('Error processing SMS: $e');
+          continue;
+        }
+      }
+
+      Navigator.pop(context); // Close loading dialog
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Test Mode: Successfully synced ${transactions.length} SMS transactions from $phoneNumber'),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
+      );
+
+    } catch (e) {
+      Navigator.pop(context); // Close loading dialog if still open
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Test Mode Error: $e'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
+      );
+    }
+  }
+
+  Future<bool> _transactionExists(String buildingId, String transactionId) async {
+    try {
+      DocumentSnapshot doc = await FirebaseFirestore.instance
+          .collection('rentals')
+          .doc(buildingId)
+          .collection('smsTransactions')
+          .doc(transactionId)
+          .get();
+      return doc.exists;
+    } catch (e) {
+      return false;
+    }
+  }
+
   Future<void> _processPaymentFromSMS(SMSTransaction transaction) async {
     try {
       // Check if unit exists in the system
@@ -4246,210 +4731,215 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
       
       showDialog(
         context: context,
-        builder: (context) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF667eea), Color(0xFF764ba2)],
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Center(
-                  child: Icon(
-                    Icons.sms_rounded,
-                    color: Colors.white,
-                    size: 20,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+        builder: (dialogContext) {
+          // Use a local variable that can be updated
+          String? dialogSelectedBank = selectedBank;
+          
+          return StatefulBuilder(
+            builder: (context, setDialogState) {
+              return AlertDialog(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                title: Row(
                   children: [
-                    Text('SMS Sender Setup'),
-                    Text(
-                      'Configure payment SMS source',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.normal),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          content: StatefulBuilder(
-            builder: (context, setState) {
-              return SizedBox(
-                width: double.maxFinite,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Select your bank to enable automatic SMS payment processing:',
-                      style: TextStyle(fontSize: 14),
-                    ),
-                    const SizedBox(height: 16),
-                    DropdownButtonFormField<String>(
-                      value: selectedBank,
-                      decoration: InputDecoration(
-                        labelText: 'Select Bank',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        prefixIcon: const Icon(Icons.account_balance),
-                      ),
-                      items: [
-                        const DropdownMenuItem<String>(
-                          value: null,
-                          child: Text('-- Select a Bank --'),
-                        ),
-                        ...availableBanks.map((bank) {
-                          return DropdownMenuItem<String>(
-                            value: bank['id'],
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 8,
-                                  height: 8,
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFF667eea),
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        bank['name']!,
-                                        style: const TextStyle(fontWeight: FontWeight.w600),
-                                      ),
-                                      Text(
-                                        'Sender: ${bank['sender']}',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: Colors.grey[600],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }),
-                      ],
-                      onChanged: (value) {
-                        setState(() {
-                          selectedBank = value;
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 16),
                     Container(
-                      padding: const EdgeInsets.all(12),
+                      width: 40,
+                      height: 40,
                       decoration: BoxDecoration(
-                        color: const Color(0xFF667eea).withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: const Color(0xFF667eea).withOpacity(0.3),
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF667eea), Color(0xFF764ba2)],
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Center(
+                        child: Icon(
+                          Icons.sms_rounded,
+                          color: Colors.white,
+                          size: 20,
                         ),
                       ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.info_outline,
-                                color: const Color(0xFF667eea),
-                                size: 20,
-                              ),
-                              const SizedBox(width: 8),
-                              const Text(
-                                'How it works:',
-                                style: TextStyle(fontWeight: FontWeight.bold),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          const Text(
-                            '• Select your bank from the list above',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                          const Text(
-                            '• The app will read SMS from that bank',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                          const Text(
-                            '• Payments will be automatically processed',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                          const Text(
-                            '• Your selection is saved and remembered',
-                            style: TextStyle(fontSize: 12),
+                          Text('SMS Sender Setup'),
+                          Text(
+                            'Configure payment SMS source',
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.normal),
                           ),
                         ],
                       ),
                     ),
                   ],
                 ),
+                content: SizedBox(
+                  width: double.maxFinite,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Select your bank to enable automatic SMS payment processing:',
+                        style: TextStyle(fontSize: 14),
+                      ),
+                      const SizedBox(height: 16),
+                      DropdownButtonFormField<String>(
+                        value: dialogSelectedBank,
+                        decoration: InputDecoration(
+                          labelText: 'Select Bank',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          prefixIcon: const Icon(Icons.account_balance),
+                        ),
+                        items: [
+                          const DropdownMenuItem<String>(
+                            value: null,
+                            child: Text('-- Select a Bank --'),
+                          ),
+                          ...availableBanks.map((bank) {
+                            return DropdownMenuItem<String>(
+                              value: bank['id'],
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 8,
+                                    height: 8,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF667eea),
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          bank['name']!,
+                                          style: const TextStyle(fontWeight: FontWeight.w600),
+                                        ),
+                                        Text(
+                                          'Sender: ${bank['sender']}',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.grey[600],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }),
+                        ],
+                        onChanged: (value) {
+                          setDialogState(() {
+                            dialogSelectedBank = value;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF667eea).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: const Color(0xFF667eea).withOpacity(0.3),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.info_outline,
+                                  color: const Color(0xFF667eea),
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'How it works:',
+                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            const Text(
+                              '• Select your bank from the list above',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                            const Text(
+                              '• The app will read SMS from that bank',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                            const Text(
+                              '• Payments will be automatically processed',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                            const Text(
+                              '• Your selection is saved and remembered',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Cancel'),
+                  ),
+                  ElevatedButton(
+                    onPressed: dialogSelectedBank == null ? null : () async {
+                      try {
+                        // Save the selected bank
+                        await smsService.assignBankToBuilding(widget.selectedBuildingId!, dialogSelectedBank!);
+                        
+                        Navigator.pop(context);
+                        
+                        // Get bank display name
+                        String bankName = availableBanks.firstWhere((b) => b['id'] == dialogSelectedBank)['name']!;
+                        
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Bank configured: $bankName'),
+                            backgroundColor: Colors.green,
+                            behavior: SnackBarBehavior.floating,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          ),
+                        );
+                      } catch (e) {
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Error configuring bank: $e'),
+                            backgroundColor: Colors.red,
+                            behavior: SnackBarBehavior.floating,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          ),
+                        );
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF667eea),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text('Save Bank Selection'),
+                  ),
+                ],
               );
             },
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: selectedBank == null ? null : () async {
-                try {
-                  // Save the selected bank
-                  await smsService.assignBankToBuilding(widget.selectedBuildingId!, selectedBank!);
-                  
-                  Navigator.pop(context);
-                  
-                  // Get bank display name
-                  String bankName = availableBanks.firstWhere((b) => b['id'] == selectedBank)['name']!;
-                  
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Bank configured: $bankName'),
-                      backgroundColor: Colors.green,
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    ),
-                  );
-                } catch (e) {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Error configuring bank: $e'),
-                      backgroundColor: Colors.red,
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    ),
-                  );
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF667eea),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              child: const Text('Save Bank Selection'),
-            ),
-          ],
-        ),
+          );
+        },
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(

@@ -33,6 +33,9 @@ class _SMSScreenState extends State<SMSScreen> with TickerProviderStateMixin {
   String selectedRecipientType = 'individual';
   List<String> selectedPhones = [];
   
+  // SIM card selection (0 = SIM1, 1 = SIM2)
+  int selectedSimSlot = 0;
+  
   // Message templates
   List<Map<String, String>> messageTemplates = [
     {
@@ -58,6 +61,14 @@ class _SMSScreenState extends State<SMSScreen> with TickerProviderStateMixin {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _loadUserData();
+    _loadSimPreference();
+  }
+  
+  Future<void> _loadSimPreference() async {
+    final simSlot = await _smsService.getPreferredSimSlot();
+    setState(() {
+      selectedSimSlot = simSlot;
+    });
   }
 
   @override
@@ -123,16 +134,28 @@ class _SMSScreenState extends State<SMSScreen> with TickerProviderStateMixin {
       appBar: AppBar(
         title: const Text('SMS Communications'),
         actions: [
-          ElevatedButton.icon(
-            onPressed: () => _showRechargeDialog(),
-            icon: const Icon(Icons.add),
-            label: const Text('Recharge via M-Pesa'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.white,
-              foregroundColor: const Color(0xFF667eea),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            margin: const EdgeInsets.only(right: 16),
+            decoration: BoxDecoration(
+              color: Colors.green.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.phone_android, color: Colors.green, size: 16),
+                const SizedBox(width: 4),
+                const Text(
+                  'FREE SMS',
+                  style: TextStyle(
+                    color: Colors.green,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(width: 16),
         ],
         bottom: TabBar(
           controller: _tabController,
@@ -157,18 +180,18 @@ class _SMSScreenState extends State<SMSScreen> with TickerProviderStateMixin {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'SMS Balance',
+                      'SMS Method',
                       style: TextStyle(
                         fontSize: 14,
                         color: Colors.grey,
                       ),
                     ),
-                    Text(
-                      smsBalance == 'Unknown' ? 'SMS Balance: $smsBalance' : '$smsBalance messages remaining',
+                    const Text(
+                      'Direct from Device (FREE)',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
-                        color: const Color(0xFF667eea),
+                        color: Colors.green,
                       ),
                     ),
                   ],
@@ -219,6 +242,79 @@ class _SMSScreenState extends State<SMSScreen> with TickerProviderStateMixin {
             style: TextStyle(
               fontSize: 14,
               color: Colors.grey,
+            ),
+          ),
+          
+          const SizedBox(height: 24),
+          
+          // SIM Card Selection (for dual SIM phones)
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.blue.shade200),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.sim_card, color: Colors.blue.shade700, size: 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      'SIM Card Selection',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue.shade700,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: RadioListTile<int>(
+                        title: const Text('SIM 1'),
+                        value: 0,
+                        groupValue: selectedSimSlot,
+                        onChanged: (value) async {
+                          setState(() {
+                            selectedSimSlot = value!;
+                          });
+                          await _smsService.setPreferredSimSlot(value!);
+                        },
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                    Expanded(
+                      child: RadioListTile<int>(
+                        title: const Text('SIM 2'),
+                        value: 1,
+                        groupValue: selectedSimSlot,
+                        onChanged: (value) async {
+                          setState(() {
+                            selectedSimSlot = value!;
+                          });
+                          await _smsService.setPreferredSimSlot(value!);
+                        },
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  ],
+                ),
+                Text(
+                  'SMS will be sent from SIM ${selectedSimSlot + 1}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
             ),
           ),
           
@@ -744,11 +840,13 @@ class _SMSScreenState extends State<SMSScreen> with TickerProviderStateMixin {
           result = await _smsService.sendSMS(
             phoneNumber: selectedPhones.first,
             message: _messageController.text,
+            simSlot: selectedSimSlot,
           );
         } else {
           result = await _smsService.sendBulkSMS(
             phoneNumbers: selectedPhones,
             message: _messageController.text,
+            simSlot: selectedSimSlot,
           );
         }
       } else {
@@ -758,6 +856,7 @@ class _SMSScreenState extends State<SMSScreen> with TickerProviderStateMixin {
           buildingId: selectedRentalId!,
           groupType: groupType,
           message: _messageController.text,
+          simSlot: selectedSimSlot,
         );
       }
 

@@ -1,10 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_sms_inbox/flutter_sms_inbox.dart';
+import 'package:flutter_sms/flutter_sms.dart' as sms;
 import '../models/sms_format_model.dart';
 import '../models/tenant_model.dart';
 
@@ -15,11 +14,6 @@ class SMSService {
   // Platform detection
   bool get isWeb => kIsWeb;
   bool get isMobile => !kIsWeb;
-  
-  // HostPinnacle SMS API Configuration
-  static const String _apiKey = '3f91356dbd39607ae29e3bfcc65c79998e4c524f';
-  static const String _baseUrl = 'https://sms.hostpinnacle.co.ke/api/services/sendsms/';
-  static const String _senderName = 'HOSTPINNACLE'; // Default sender name
   
   // Bank configurations with exact sender names and SMS formats
   static const Map<String, Map<String, dynamic>> bankFormats = {
@@ -558,14 +552,55 @@ class SMSService {
     }
   }
 
-  // HostPinnacle SMS API Methods
+  // Direct SMS Sending Methods (Using Device SIM Card)
   
-  // Send single SMS
+  // Request SMS sending permissions
+  Future<bool> requestSMSSendPermissions() async {
+    if (!isMobile) return false;
+    
+    try {
+      PermissionStatus status = await Permission.sms.request();
+      return status == PermissionStatus.granted;
+    } catch (e) {
+      print('Error requesting SMS send permissions: $e');
+      return false;
+    }
+  }
+  
+  // Get preferred SIM slot from settings
+  Future<int> getPreferredSimSlot() async {
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      return prefs.getInt('preferred_sim_slot') ?? 0; // Default to SIM 1 (slot 0)
+    } catch (e) {
+      return 0; // Default to SIM 1
+    }
+  }
+
+  // Set preferred SIM slot
+  Future<void> setPreferredSimSlot(int simSlot) async {
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('preferred_sim_slot', simSlot);
+    } catch (e) {
+      print('Error saving SIM preference: $e');
+    }
+  }
+
+  // Send single SMS directly from device
   Future<Map<String, dynamic>> sendSMS({
     required String phoneNumber,
     required String message,
-    String? customSender,
+    String? customSender, // Ignored for direct SMS (uses device number)
+    int? simSlot, // Optional: specify which SIM to use (0 = SIM1, 1 = SIM2)
   }) async {
+    if (!isMobile) {
+      return {
+        'success': false,
+        'message': 'SMS sending is only available on mobile devices',
+      };
+    }
+
     try {
       // Clean phone number (remove spaces, dashes, etc.)
       String cleanPhone = phoneNumber.replaceAll(RegExp(r'[^\d+]'), '');
@@ -577,46 +612,43 @@ class SMSService {
         cleanPhone = '+254$cleanPhone';
       }
 
-      final response = await http.post(
-        Uri.parse(_baseUrl),
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'User-Agent': 'RentalApp/1.0',
-        },
-        body: jsonEncode({
-          'apikey': _apiKey,
-          'partnerID': '', // Not required with API key
-          'message': message,
-          'shortcode': customSender ?? _senderName,
-          'mobile': cleanPhone,
-        }),
-      ).timeout(const Duration(seconds: 30));
-
-      if (response.statusCode == 200) {
-        Map<String, dynamic> result = jsonDecode(response.body);
-        
-        // Check if the API returned an error in the response body
-        if (result['status'] == 'error' || result['success'] == false) {
-          throw Exception('API Error: ${result['message'] ?? 'Unknown error'}');
-        }
-        
-        // Log SMS to Firestore
-        await _logSMSToFirestore(
-          phoneNumber: cleanPhone,
-          message: message,
-          status: 'sent',
-          response: result,
-        );
-        
-        return {
-          'success': true,
-          'message': 'SMS sent successfully',
-          'data': result,
-        };
-      } else {
-        throw Exception('HTTP ${response.statusCode}: ${response.body}');
+      // Check permissions
+      bool hasPermission = await requestSMSSendPermissions();
+      if (!hasPermission) {
+        throw Exception('SMS permissions not granted');
       }
+
+      // Get SIM slot preference if not specified
+      int selectedSimSlot = simSlot ?? await getPreferredSimSlot();
+
+      // Send SMS using device with SIM slot selection
+      // Note: flutter_sms will use the default SIM or show SIM selector dialog
+      String result = await sms.sendSMS(
+        message: message,
+        recipients: [cleanPhone],
+        sendDirect: false, // false = shows Android's SMS app with SIM selector
+      );
+      
+      // Log SMS to Firestore
+      await _logSMSToFirestore(
+        phoneNumber: cleanPhone,
+        message: message,
+        status: 'sent',
+        response: {
+          'result': result,
+          'simSlot': selectedSimSlot,
+          'simName': selectedSimSlot == 0 ? 'SIM 1' : 'SIM 2',
+        },
+      );
+      
+      return {
+        'success': true,
+        'message': 'SMS sent successfully from SIM ${selectedSimSlot + 1}',
+        'data': {
+          'result': result,
+          'simSlot': selectedSimSlot,
+        },
+      };
     } catch (e) {
       // Log failed SMS
       await _logSMSToFirestore(
@@ -628,14 +660,12 @@ class SMSService {
       
       // Provide more user-friendly error messages
       String userMessage = 'Failed to send SMS';
-      if (e.toString().contains('TimeoutException')) {
-        userMessage = 'SMS service timeout. Please check your internet connection and try again.';
-      } else if (e.toString().contains('SocketException')) {
-        userMessage = 'Network error. Please check your internet connection.';
-      } else if (e.toString().contains('ClientException')) {
-        userMessage = 'SMS service unavailable. Please try again later.';
-      } else if (e.toString().contains('FormatException')) {
-        userMessage = 'Invalid response from SMS service. Please contact support.';
+      if (e.toString().contains('permissions')) {
+        userMessage = 'SMS permissions required. Please grant SMS permissions and try again.';
+      } else if (e.toString().contains('No SIM')) {
+        userMessage = 'No SIM card detected. Please insert a SIM card.';
+      } else {
+        userMessage = 'Failed to send SMS: ${e.toString()}';
       }
       
       return {
@@ -646,65 +676,92 @@ class SMSService {
     }
   }
 
-  // Send bulk SMS
+  // Send bulk SMS directly from device
   Future<Map<String, dynamic>> sendBulkSMS({
     required List<String> phoneNumbers,
     required String message,
-    String? customSender,
+    String? customSender, // Ignored for direct SMS
+    int? simSlot, // Optional: specify which SIM to use
   }) async {
-    try {
-      List<Map<String, dynamic>> results = [];
-      int successCount = 0;
-      int failureCount = 0;
+    if (!isMobile) {
+      return {
+        'success': false,
+        'message': 'SMS sending is only available on mobile devices',
+      };
+    }
 
-      for (String phoneNumber in phoneNumbers) {
-        Map<String, dynamic> result = await sendSMS(
-          phoneNumber: phoneNumber,
-          message: message,
-          customSender: customSender,
-        );
-        
-        results.add({
-          'phoneNumber': phoneNumber,
-          'result': result,
-        });
-        
-        if (result['success']) {
-          successCount++;
-        } else {
-          failureCount++;
+    try {
+      // Clean all phone numbers
+      List<String> cleanPhones = phoneNumbers.map((phone) {
+        String cleanPhone = phone.replaceAll(RegExp(r'[^\d+]'), '');
+        if (cleanPhone.startsWith('0')) {
+          return '+254${cleanPhone.substring(1)}';
+        } else if (!cleanPhone.startsWith('+')) {
+          return '+254$cleanPhone';
         }
-        
-        // Add small delay to avoid rate limiting
-        await Future.delayed(const Duration(milliseconds: 500));
+        return cleanPhone;
+      }).toList();
+
+      // Check permissions
+      bool hasPermission = await requestSMSSendPermissions();
+      if (!hasPermission) {
+        throw Exception('SMS permissions not granted');
+      }
+
+      // Get SIM slot preference if not specified
+      int selectedSimSlot = simSlot ?? await getPreferredSimSlot();
+
+      // Send SMS to all recipients at once
+      // Note: flutter_sms will use the default SIM or show SIM selector dialog
+      String result = await sms.sendSMS(
+        message: message,
+        recipients: cleanPhones,
+        sendDirect: false, // false = shows Android's SMS app with SIM selector
+      );
+      
+      // Log bulk SMS to Firestore
+      for (String phone in cleanPhones) {
+        await _logSMSToFirestore(
+          phoneNumber: phone,
+          message: message,
+          status: 'sent',
+          response: {
+            'result': result,
+            'bulk': true,
+            'simSlot': selectedSimSlot,
+            'simName': selectedSimSlot == 0 ? 'SIM 1' : 'SIM 2',
+          },
+        );
       }
 
       return {
         'success': true,
-        'message': 'Bulk SMS completed',
-        'totalSent': phoneNumbers.length,
-        'successCount': successCount,
-        'failureCount': failureCount,
-        'results': results,
+        'message': 'Bulk SMS sent successfully from SIM ${selectedSimSlot + 1}',
+        'totalSent': cleanPhones.length,
+        'successCount': cleanPhones.length,
+        'failureCount': 0,
+        'data': {
+          'result': result,
+          'simSlot': selectedSimSlot,
+        },
       };
     } catch (e) {
       return {
         'success': false,
-        'message': 'Failed to send bulk SMS: $e',
+        'message': 'Failed to send bulk SMS: ${e.toString()}',
         'error': e.toString(),
       };
     }
   }
 
-  // Get SMS balance (if supported by API)
+  // Get SMS balance (for direct SMS, this depends on SIM card plan)
   Future<Map<String, dynamic>> getSMSBalance() async {
     try {
-      // HostPinnacle might not have a balance endpoint with just API key
-      // This is a placeholder - check their documentation
+      // For direct SMS, balance depends on user's mobile plan
       return {
         'success': true,
-        'balance': 'Unknown', // API key method might not provide balance
-        'message': 'Balance check not available with API key method',
+        'balance': 'Unlimited', // Depends on your SIM card plan
+        'message': 'SMS sent directly from your device using your SIM card plan',
       };
     } catch (e) {
       return {
@@ -737,9 +794,32 @@ class SMSService {
   // Get tenants with arrears for SMS targeting
   Future<List<Tenant>> getTenantsWithArrears(String buildingId) async {
     try {
-      // This would need to be implemented based on your payment tracking logic
-      // For now, return all tenants - you can enhance this later
-      return await getTenants(buildingId, filter: 'active');
+      // Get all active tenants
+      List<Tenant> allTenants = await getTenants(buildingId, filter: 'active');
+      List<Tenant> tenantsWithArrears = [];
+      
+      // Check each tenant's payment status
+      for (Tenant tenant in allTenants) {
+        // Get tenant's unit payment status
+        DocumentSnapshot unitDoc = await _firestore
+            .collection('rentals')
+            .doc(buildingId)
+            .collection('units')
+            .doc(tenant.unitNumber)
+            .get();
+        
+        if (unitDoc.exists) {
+          Map<String, dynamic> unitData = unitDoc.data() as Map<String, dynamic>;
+          double balance = (unitData['balance'] ?? 0).toDouble();
+          
+          // If balance is negative (arrears), add to list
+          if (balance < 0) {
+            tenantsWithArrears.add(tenant);
+          }
+        }
+      }
+      
+      return tenantsWithArrears;
     } catch (e) {
       throw Exception('Failed to get tenants with arrears: $e');
     }
@@ -751,6 +831,7 @@ class SMSService {
     required String groupType, // 'all', 'active', 'arrears'
     required String message,
     String? customSender,
+    int? simSlot,
   }) async {
     try {
       List<Tenant> tenants = [];
@@ -785,6 +866,7 @@ class SMSService {
         phoneNumbers: phoneNumbers,
         message: message,
         customSender: customSender,
+        simSlot: simSlot,
       );
     } catch (e) {
       return {
@@ -844,7 +926,7 @@ class SMSService {
         'response': response,
         'error': error,
         'timestamp': FieldValue.serverTimestamp(),
-        'apiKey': _apiKey.substring(0, 8) + '...', // Log partial key for tracking
+        'method': 'direct_device', // Sent directly from device
       });
     } catch (e) {
       print('Failed to log SMS to Firestore: $e');
