@@ -1628,10 +1628,6 @@ class _DashboardPageState extends State<DashboardPage> {
               
               // Property Statistics (loads independently)
               _buildPropertyStatistics(),
-              const SizedBox(height: 24),
-              
-              // Quick Actions (always available)
-              _buildQuickActionsSection(),
             ] else ...[
               Container(
                 width: double.infinity,
@@ -2153,50 +2149,6 @@ class _DashboardPageState extends State<DashboardPage> {
           style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 16),
-        Row(
-          children: [
-            Expanded(
-              child: _buildQuickActionCard(
-                icon: Icons.people,
-                title: 'Manage Tenants',
-                onTap: () {
-                  // Navigate to tenants screen
-                },
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildQuickActionCard(
-                icon: Icons.home_work,
-                title: 'Manage Units',
-                onTap: () {
-                  // Navigate to units screen
-                },
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildQuickActionCard(
-                icon: Icons.payment,
-                title: 'Record Payment',
-                onTap: () {
-                  // Navigate to payments screen
-                },
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildQuickActionCard(
-                icon: Icons.receipt,
-                title: 'Add Expense',
-                onTap: () {
-                  // Navigate to expenses screen
-                },
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
         Row(
           children: [
             Expanded(
