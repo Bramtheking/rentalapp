@@ -25,7 +25,7 @@ android {
         applicationId = "com.example.rentalapp"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = 21  // Explicit minimum SDK version
+        minSdk = flutter.minSdkVersion  // Explicit minimum SDK version
         targetSdk = 36  // Updated target SDK version
         versionCode = 1
         versionName = "1.0.0"
