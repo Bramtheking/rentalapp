@@ -3,14 +3,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_sms_inbox/flutter_sms_inbox.dart' as inbox;
-import 'package:telephony/telephony.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/sms_format_model.dart';
 import '../models/tenant_model.dart';
 
 class SMSService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final inbox.SmsQuery _query = inbox.SmsQuery();
-  final Telephony telephony = Telephony.instance;
   
   // Platform detection
   bool get isWeb => kIsWeb;
@@ -555,17 +554,11 @@ class SMSService {
 
   // Direct SMS Sending Methods (Using Device SIM Card)
   
-  // Request SMS sending permissions
+  // Request SMS sending permissions (not needed for SMS intent)
   Future<bool> requestSMSSendPermissions() async {
-    if (!isMobile) return false;
-    
-    try {
-      bool? permissionsGranted = await telephony.requestPhoneAndSmsPermissions;
-      return permissionsGranted ?? false;
-    } catch (e) {
-      print('Error requesting SMS send permissions: $e');
-      return false;
-    }
+    // SMS intent doesn't require special permissions
+    // Android handles permissions automatically
+    return true;
   }
   
   // Get preferred SIM slot from settings
@@ -613,24 +606,24 @@ class SMSService {
         cleanPhone = '+254$cleanPhone';
       }
 
-      // Check permissions
-      bool hasPermission = await requestSMSSendPermissions();
-      if (!hasPermission) {
-        throw Exception('SMS permissions not granted');
-      }
-
       // Get SIM slot preference if not specified
       int selectedSimSlot = simSlot ?? await getPreferredSimSlot();
 
-      // Send SMS using device with SIM slot selection
-      // Telephony package sends directly using the specified SIM
-      await telephony.sendSms(
-        to: cleanPhone,
-        message: message,
-        isMultipart: message.length > 160,
+      // Send SMS using Android's SMS intent
+      // This opens the default SMS app with pre-filled message
+      final Uri smsUri = Uri(
+        scheme: 'sms',
+        path: cleanPhone,
+        queryParameters: {'body': message},
       );
       
-      String result = 'SMS sent successfully';
+      if (await canLaunchUrl(smsUri)) {
+        await launchUrl(smsUri);
+      } else {
+        throw Exception('Could not launch SMS app');
+      }
+      
+      String result = 'SMS app opened successfully';
       
       // Log SMS to Firestore
       await _logSMSToFirestore(
@@ -705,27 +698,26 @@ class SMSService {
         return cleanPhone;
       }).toList();
 
-      // Check permissions
-      bool hasPermission = await requestSMSSendPermissions();
-      if (!hasPermission) {
-        throw Exception('SMS permissions not granted');
-      }
-
       // Get SIM slot preference if not specified
       int selectedSimSlot = simSlot ?? await getPreferredSimSlot();
 
-      // Send SMS to all recipients one by one
-      for (String phone in cleanPhones) {
-        await telephony.sendSms(
-          to: phone,
-          message: message,
-          isMultipart: message.length > 160,
-        );
-        // Small delay to avoid overwhelming the system
-        await Future.delayed(const Duration(milliseconds: 500));
+      // For bulk SMS, we'll open SMS app with multiple recipients
+      // Join phone numbers with semicolon (Android SMS standard)
+      String recipients = cleanPhones.join(';');
+      
+      final Uri smsUri = Uri(
+        scheme: 'sms',
+        path: recipients,
+        queryParameters: {'body': message},
+      );
+      
+      if (await canLaunchUrl(smsUri)) {
+        await launchUrl(smsUri);
+      } else {
+        throw Exception('Could not launch SMS app');
       }
       
-      String result = 'Bulk SMS sent successfully';
+      String result = 'SMS app opened with ${cleanPhones.length} recipients';
       
       // Log bulk SMS to Firestore
       for (String phone in cleanPhones) {
