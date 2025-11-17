@@ -37,6 +37,30 @@ class Unit {
 
   factory Unit.fromFirestore(DocumentSnapshot doc) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+    
+    // Handle missing timestamps gracefully
+    DateTime now = DateTime.now();
+    DateTime createdAt = now;
+    DateTime updatedAt = now;
+    
+    try {
+      if (data['createdAt'] != null) {
+        createdAt = (data['createdAt'] as Timestamp).toDate();
+      }
+    } catch (e) {
+      // If createdAt is invalid, use current time
+      createdAt = now;
+    }
+    
+    try {
+      if (data['updatedAt'] != null) {
+        updatedAt = (data['updatedAt'] as Timestamp).toDate();
+      }
+    } catch (e) {
+      // If updatedAt is invalid, use current time
+      updatedAt = now;
+    }
+    
     return Unit(
       id: doc.id,
       unitNumber: data['unitNumber'] ?? '',
@@ -51,8 +75,8 @@ class Unit {
       bathrooms: data['bathrooms'] ?? 1,
       area: data['area']?.toDouble(),
       amenities: List<String>.from(data['amenities'] ?? []),
-      createdAt: (data['createdAt'] as Timestamp).toDate(),
-      updatedAt: (data['updatedAt'] as Timestamp).toDate(),
+      createdAt: createdAt,
+      updatedAt: updatedAt,
     );
   }
 
