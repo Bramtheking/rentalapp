@@ -10,7 +10,7 @@ class UnitService {
         .collection('rentals')
         .doc(rentalId)
         .collection('units')
-        .orderBy('unitId')
+        .orderBy('unitNumber')
         .snapshots()
         .map((snapshot) => snapshot.docs
             .map((doc) => Unit.fromFirestore(doc))
@@ -19,18 +19,18 @@ class UnitService {
 
   // Get units by status
   Stream<List<Unit>> getUnitsByStatus(String rentalId, String status) {
-    print('DEBUG: Querying units with status=$status + orderBy unitId');
+    print('DEBUG: Querying units with status=$status + orderBy unitNumber');
     return _firestore
         .collection('rentals')
         .doc(rentalId)
         .collection('units')
         .where('status', isEqualTo: status)
-        .orderBy('unitId')
+        .orderBy('unitNumber')
         .snapshots()
         .handleError((error) {
           print('ERROR in getUnitsByStatus: $error');
           if (error.toString().contains('index')) {
-            print('INDEX REQUIRED: Create composite index for status (Ascending) + unitId (Ascending)');
+            print('INDEX REQUIRED: Create composite index for status (Ascending) + unitNumber (Ascending)');
           }
         })
         .map((snapshot) => snapshot.docs
@@ -58,22 +58,22 @@ class UnitService {
   }
 
   // Delete unit
-  Future<void> deleteUnit(String rentalId, String unitId) async {
+  Future<void> deleteUnit(String rentalId, String unitDocId) async {
     await _firestore
         .collection('rentals')
         .doc(rentalId)
         .collection('units')
-        .doc(unitId)
+        .doc(unitDocId)
         .delete();
   }
 
   // Assign tenant to unit
-  Future<void> assignTenant(String rentalId, String unitId, String tenantId, String tenantName) async {
+  Future<void> assignTenant(String rentalId, String unitDocId, String tenantId, String tenantName) async {
     await _firestore
         .collection('rentals')
         .doc(rentalId)
         .collection('units')
-        .doc(unitId)
+        .doc(unitDocId)
         .update({
       'tenantId': tenantId,
       'tenantName': tenantName,
@@ -83,12 +83,12 @@ class UnitService {
   }
 
   // Remove tenant from unit
-  Future<void> removeTenant(String rentalId, String unitId) async {
+  Future<void> removeTenant(String rentalId, String unitDocId) async {
     await _firestore
         .collection('rentals')
         .doc(rentalId)
         .collection('units')
-        .doc(unitId)
+        .doc(unitDocId)
         .update({
       'tenantId': null,
       'tenantName': null,
@@ -155,7 +155,7 @@ class UnitService {
     return snapshot.docs
         .map((doc) => Unit.fromFirestore(doc))
         .where((unit) =>
-            unit.unitId.toLowerCase().contains(query.toLowerCase()) ||
+            unit.unitNumber.toLowerCase().contains(query.toLowerCase()) ||
             unit.unitName.toLowerCase().contains(query.toLowerCase()) ||
             unit.type.toLowerCase().contains(query.toLowerCase()) ||
             (unit.tenantName?.toLowerCase().contains(query.toLowerCase()) ?? false))

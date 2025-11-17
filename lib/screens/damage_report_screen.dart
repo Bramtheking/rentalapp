@@ -27,7 +27,7 @@ class _DamageReportScreenState extends State<DamageReportScreen> {
   late TextEditingController _repairNotesController;
   late TextEditingController _repairCostController;
   
-  String? _selectedUnitId;
+  String? _selectedUnitNumber;
   String _selectedUnitName = '';
   String _selectedStatus = 'pending';
   String _selectedPriority = 'medium';
@@ -68,7 +68,7 @@ class _DamageReportScreenState extends State<DamageReportScreen> {
     );
     
     if (report != null) {
-      _selectedUnitId = report.unitId;
+      _selectedUnitNumber = report.unitNumber;
       _selectedUnitName = report.unitName;
       _selectedStatus = report.status;
       _selectedPriority = report.priority;
@@ -157,7 +157,7 @@ class _DamageReportScreenState extends State<DamageReportScreen> {
                     child: _isLoadingUnits
                         ? const Center(child: CircularProgressIndicator())
                         : DropdownButtonFormField<String>(
-                            value: _selectedUnitId,
+                            value: _selectedUnitNumber,
                             decoration: const InputDecoration(
                               labelText: 'Unit *',
                               border: OutlineInputBorder(),
@@ -166,13 +166,13 @@ class _DamageReportScreenState extends State<DamageReportScreen> {
                             hint: const Text('Select Unit'),
                             items: _availableUnits.map((unit) {
                               return DropdownMenuItem(
-                                value: unit.id,
-                                child: Text('${unit.unitId} - ${unit.unitName}'),
+                                value: unit.unitNumber,
+                                child: Text('${unit.unitNumber} - ${unit.unitName}'),
                               );
                             }).toList(),
                             onChanged: (value) {
                               setState(() {
-                                _selectedUnitId = value;
+                                _selectedUnitNumber = value;
                                 final selectedUnit = _availableUnits.firstWhere(
                                   (unit) => unit.id == value,
                                 );
@@ -460,7 +460,7 @@ class _DamageReportScreenState extends State<DamageReportScreen> {
         id: widget.damageReport?.id ?? '',
         damageId: damageId,
         description: _descriptionController.text.trim(),
-        unitId: _selectedUnitId!,
+        unitNumber: _selectedUnitNumber!,
         unitName: _selectedUnitName,
         reportedBy: _reportedByController.text.trim(),
         dateReported: _dateReported,

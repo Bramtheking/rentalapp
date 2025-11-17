@@ -2,7 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 class Unit {
   final String id;
-  final String unitId;
+  final String unitNumber;
   final String unitName;
   final String type;
   final String status; // 'occupied', 'vacant', 'under_maintenance'
@@ -19,7 +19,7 @@ class Unit {
 
   Unit({
     required this.id,
-    required this.unitId,
+    required this.unitNumber,
     required this.unitName,
     required this.type,
     required this.status,
@@ -39,7 +39,7 @@ class Unit {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
     return Unit(
       id: doc.id,
-      unitId: data['unitId'] ?? '',
+      unitNumber: data['unitNumber'] ?? '',
       unitName: data['unitName'] ?? '',
       type: data['type'] ?? '',
       status: data['status'] ?? 'vacant',
@@ -58,7 +58,7 @@ class Unit {
 
   Map<String, dynamic> toFirestore() {
     return {
-      'unitId': unitId,
+      'unitNumber': unitNumber,
       'unitName': unitName,
       'type': type,
       'status': status,
@@ -76,7 +76,7 @@ class Unit {
   }
 
   Unit copyWith({
-    String? unitId,
+    String? unitNumber,
     String? unitName,
     String? type,
     String? status,
@@ -91,7 +91,7 @@ class Unit {
   }) {
     return Unit(
       id: id,
-      unitId: unitId ?? this.unitId,
+      unitNumber: unitNumber ?? this.unitNumber,
       unitName: unitName ?? this.unitName,
       type: type ?? this.type,
       status: status ?? this.status,
@@ -113,7 +113,7 @@ class DamageReport {
   final String id;
   final String damageId;
   final String description;
-  final String unitId;
+  final String unitNumber;
   final String unitName;
   final String reportedBy;
   final DateTime dateReported;
@@ -130,7 +130,7 @@ class DamageReport {
     required this.id,
     required this.damageId,
     required this.description,
-    required this.unitId,
+    required this.unitNumber,
     required this.unitName,
     required this.reportedBy,
     required this.dateReported,
@@ -150,7 +150,7 @@ class DamageReport {
       id: doc.id,
       damageId: data['damageId'] ?? '',
       description: data['description'] ?? '',
-      unitId: data['unitId'] ?? '',
+      unitNumber: data['unitNumber'] ?? '',
       unitName: data['unitName'] ?? '',
       reportedBy: data['reportedBy'] ?? '',
       dateReported: (data['dateReported'] as Timestamp).toDate(),
@@ -171,7 +171,7 @@ class DamageReport {
     return {
       'damageId': damageId,
       'description': description,
-      'unitId': unitId,
+      'unitNumber': unitNumber,
       'unitName': unitName,
       'reportedBy': reportedBy,
       'dateReported': Timestamp.fromDate(dateReported),
@@ -189,7 +189,7 @@ class DamageReport {
   DamageReport copyWith({
     String? damageId,
     String? description,
-    String? unitId,
+    String? unitNumber,
     String? unitName,
     String? reportedBy,
     DateTime? dateReported,
@@ -204,7 +204,7 @@ class DamageReport {
       id: id,
       damageId: damageId ?? this.damageId,
       description: description ?? this.description,
-      unitId: unitId ?? this.unitId,
+      unitNumber: unitNumber ?? this.unitNumber,
       unitName: unitName ?? this.unitName,
       reportedBy: reportedBy ?? this.reportedBy,
       dateReported: dateReported ?? this.dateReported,

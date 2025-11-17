@@ -21,7 +21,7 @@ class _AddEditUnitScreenState extends State<AddEditUnitScreen> {
   final _formKey = GlobalKey<FormState>();
   final UnitService _unitService = UnitService();
   
-  late TextEditingController _unitIdController;
+  late TextEditingController _unitNumberController;
   late TextEditingController _unitNameController;
   late TextEditingController _rentController;
   late TextEditingController _bedroomsController;
@@ -77,7 +77,7 @@ class _AddEditUnitScreenState extends State<AddEditUnitScreen> {
   void _initializeControllers() {
     final unit = widget.unit;
     
-    _unitIdController = TextEditingController(text: unit?.unitId ?? '');
+    _unitNumberController = TextEditingController(text: unit?.unitNumber ?? '');
     _unitNameController = TextEditingController(text: unit?.unitName ?? '');
     _rentController = TextEditingController(
       text: unit?.rent.toString() ?? '',
@@ -102,7 +102,7 @@ class _AddEditUnitScreenState extends State<AddEditUnitScreen> {
 
   @override
   void dispose() {
-    _unitIdController.dispose();
+    _unitNumberController.dispose();
     _unitNameController.dispose();
     _rentController.dispose();
     _bedroomsController.dispose();
@@ -151,9 +151,9 @@ class _AddEditUnitScreenState extends State<AddEditUnitScreen> {
                 children: [
                   Expanded(
                     child: TextFormField(
-                      controller: _unitIdController,
+                      controller: _unitNumberController,
                       decoration: const InputDecoration(
-                        labelText: 'Unit ID *',
+                        labelText: 'Unit Number *',
                         border: OutlineInputBorder(),
                         prefixIcon: Icon(Icons.tag),
                         hintText: 'e.g., U001, A-101',
@@ -435,7 +435,7 @@ class _AddEditUnitScreenState extends State<AddEditUnitScreen> {
     try {
       final unit = Unit(
         id: widget.unit?.id ?? '',
-        unitId: _unitIdController.text.trim(),
+        unitNumber: _unitNumberController.text.trim(),
         unitName: _unitNameController.text.trim(),
         type: _selectedType,
         status: _selectedStatus,

@@ -3,7 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import '../services/auth_service.dart';
 import '../services/sms_service.dart';
-import '../services/report_service.dart';
+import '../models/tenant_model.dart';
 
 class SMSScreen extends StatefulWidget {
   const SMSScreen({super.key});
@@ -398,13 +398,9 @@ class _SMSScreenState extends State<SMSScreen> with TickerProviderStateMixin {
               ],
             ),
             const SizedBox(height: 12),
-            // Quick tenant selection (coming soon)
+            // Quick tenant selection
             ElevatedButton.icon(
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Tenant selection feature coming soon!')),
-                );
-              },
+              onPressed: _showTenantSelector,
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.blue.shade50,
                 foregroundColor: Colors.blue.shade700,
@@ -886,6 +882,71 @@ class _SMSScreenState extends State<SMSScreen> with TickerProviderStateMixin {
       setState(() {
         isSending = false;
       });
+    }
+  }
+
+  void _showTenantSelector() async {
+    try {
+      // Get tenants from the building
+      final tenants = await _smsService.getTenants(selectedRentalId!);
+      
+      if (tenants.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No tenants found in this building')),
+        );
+        return;
+      }
+
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Select Tenants'),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 400,
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: tenants.length,
+              itemBuilder: (context, index) {
+                final tenant = tenants[index];
+                final phone = tenant.phone;
+                final name = tenant.name;
+                final unit = tenant.unitNumber;
+                final isSelected = selectedPhones.contains(phone);
+                
+                return CheckboxListTile(
+                  title: Text(name),
+                  subtitle: Text('Unit: $unit • Phone: $phone'),
+                  value: isSelected,
+                  onChanged: phone.isEmpty ? null : (bool? value) {
+                    setState(() {
+                      if (value == true) {
+                        if (!selectedPhones.contains(phone)) {
+                          selectedPhones.add(phone);
+                        }
+                      } else {
+                        selectedPhones.remove(phone);
+                      }
+                    });
+                    Navigator.pop(context);
+                    _showTenantSelector(); // Refresh dialog
+                  },
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Done'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error loading tenants: $e')),
+      );
     }
   }
 

@@ -386,7 +386,7 @@ class _UnitsScreenState extends State<UnitsScreen> with TickerProviderStateMixin
                       final filteredUnits = query.isEmpty
                           ? units
                           : units.where((unit) =>
-                              unit.unitId.toLowerCase().contains(query) ||
+                              unit.unitNumber.toLowerCase().contains(query) ||
                               unit.unitName.toLowerCase().contains(query) ||
                               unit.type.toLowerCase().contains(query) ||
                               (unit.tenantName?.toLowerCase().contains(query) ?? false)).toList();
@@ -716,7 +716,7 @@ class _UnitsScreenState extends State<UnitsScreen> with TickerProviderStateMixin
                   ),
                   child: Center(
                     child: Text(
-                      unit.unitId,
+                      unit.unitNumber,
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 16,
@@ -1101,7 +1101,7 @@ class _UnitsScreenState extends State<UnitsScreen> with TickerProviderStateMixin
               ),
               child: Center(
                 child: Text(
-                  unit.unitId,
+                  unit.unitNumber,
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 14,
@@ -1111,7 +1111,7 @@ class _UnitsScreenState extends State<UnitsScreen> with TickerProviderStateMixin
               ),
             ),
             const SizedBox(width: 12),
-            Text('Unit ${unit.unitId}'),
+            Text('Unit ${unit.unitNumber}'),
           ],
         ),
         content: SingleChildScrollView(
@@ -1229,7 +1229,7 @@ class _UnitsScreenState extends State<UnitsScreen> with TickerProviderStateMixin
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Delete Unit'),
-        content: Text('Are you sure you want to delete unit ${unit.unitId}? This action cannot be undone.'),
+        content: Text('Are you sure you want to delete unit ${unit.unitNumber}? This action cannot be undone.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),

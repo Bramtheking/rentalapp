@@ -919,6 +919,7 @@ class _HomeScreenState extends State<HomeScreen> {
               _selectedBuildingName = name;
             });
             _saveBuildingSelection(id, name);
+            _performAutoSync(); // Auto-sync when building is selected
           },
           onAddBuilding: () => _showAddBuildingDialog(context),
         );
@@ -947,6 +948,7 @@ class _HomeScreenState extends State<HomeScreen> {
               _selectedBuildingName = name;
             });
             _saveBuildingSelection(id, name);
+            _performAutoSync(); // Auto-sync when building is selected
           },
           onAddBuilding: () => _showAddBuildingDialog(context),
         );

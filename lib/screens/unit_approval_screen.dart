@@ -515,24 +515,52 @@ class _UnitApprovalScreenState extends State<UnitApprovalScreen> {
 
   void _approveUnit(PendingUnit unit) async {
     try {
-      // Create the unit in Firestore
+      // Create the unit in Firestore with FULL schema matching Unit model
       await FirebaseFirestore.instance
           .collection('rentals')
           .doc(widget.buildingId)
           .collection('units')
           .add({
+        // Unit model fields
         'unitNumber': unit.unitRef,
+        'unitName': 'Unit ${unit.unitRef}',
+        'type': 'apartment',
+        'status': 'occupied',
         'rent': unit.amount,
-        'isOccupied': true, // Assume occupied since we have payment SMS
-        'tenantName': 'Unknown', // Will be updated when tenant is assigned
+        'tenantId': null,
+        'tenantName': 'Unknown',
+        'description': 'Auto-created from SMS payment',
+        'bedrooms': 1,
+        'bathrooms': 1,
+        'area': null,
+        'amenities': [],
         'createdAt': FieldValue.serverTimestamp(),
-        'createdFrom': 'sms_approval',
+        'updatedAt': FieldValue.serverTimestamp(),
+        // Payment tracking fields
+        'balance': 0.0,
+        'totalPaid': 0.0,
         'lastPaymentAmount': unit.amount,
         'lastPaymentDate': unit.lastSMSDate,
+        'createdFrom': 'sms_approval',
       });
 
-      // Update SMS transactions to mark them as matched
+      // Set up default payment structure for this unit
       final smsService = SMSService();
+      await smsService.setPaymentStructure(
+        widget.buildingId,
+        unit.unitRef,
+        PaymentStructure(
+          unitRef: unit.unitRef,
+          totalRent: unit.amount,
+          breakdown: {
+            'rent': unit.amount,
+          },
+          dueDate: 5, // Default due date
+          penalties: {},
+        ),
+      );
+
+      // Update SMS transactions to mark them as matched and process payments
       final transactions = await smsService.getSMSTransactions(widget.buildingId);
       
       for (var transaction in transactions) {
@@ -554,7 +582,7 @@ class _UnitApprovalScreenState extends State<UnitApprovalScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Unit ${unit.unitRef} approved and created successfully!'),
+          content: Text('Unit ${unit.unitRef} approved and created successfully with payment tracking!'),
           backgroundColor: Colors.green,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -714,24 +742,52 @@ class _UnitApprovalScreenState extends State<UnitApprovalScreen> {
   }
 
   Future<void> _approveUnitSilently(PendingUnit unit) async {
-    // Create the unit in Firestore
+    // Create the unit in Firestore with FULL schema matching Unit model
     await FirebaseFirestore.instance
         .collection('rentals')
         .doc(widget.buildingId)
         .collection('units')
         .add({
+      // Unit model fields
       'unitNumber': unit.unitRef,
+      'unitName': 'Unit ${unit.unitRef}',
+      'type': 'apartment',
+      'status': 'occupied',
       'rent': unit.amount,
-      'isOccupied': true,
+      'tenantId': null,
       'tenantName': 'Unknown',
+      'description': 'Auto-created from SMS payment',
+      'bedrooms': 1,
+      'bathrooms': 1,
+      'area': null,
+      'amenities': [],
       'createdAt': FieldValue.serverTimestamp(),
-      'createdFrom': 'sms_approval',
+      'updatedAt': FieldValue.serverTimestamp(),
+      // Payment tracking fields
+      'balance': 0.0,
+      'totalPaid': 0.0,
       'lastPaymentAmount': unit.amount,
       'lastPaymentDate': unit.lastSMSDate,
+      'createdFrom': 'sms_approval',
     });
 
-    // Update SMS transactions
+    // Set up default payment structure
     final smsService = SMSService();
+    await smsService.setPaymentStructure(
+      widget.buildingId,
+      unit.unitRef,
+      PaymentStructure(
+        unitRef: unit.unitRef,
+        totalRent: unit.amount,
+        breakdown: {
+          'rent': unit.amount,
+        },
+        dueDate: 5,
+        penalties: {},
+      ),
+    );
+
+    // Update SMS transactions
     final transactions = await smsService.getSMSTransactions(widget.buildingId);
     
     for (var transaction in transactions) {
