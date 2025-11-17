@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/unit_model.dart';
 import '../services/unit_service.dart';
 import '../services/auth_service.dart';
+import '../services/sms_service.dart';
+import '../models/sms_format_model.dart';
 import 'add_edit_unit_screen.dart';
+import 'monthly_bills_screen.dart';
 
 class UnitsScreen extends StatefulWidget {
   const UnitsScreen({super.key});
@@ -27,7 +31,7 @@ class _UnitsScreenState extends State<UnitsScreen> with TickerProviderStateMixin
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _loadUserData();
   }
 
@@ -204,6 +208,7 @@ class _UnitsScreenState extends State<UnitsScreen> with TickerProviderStateMixin
                         tabs: const [
                           Tab(text: 'Units'),
                           Tab(text: 'Damage Control'),
+                          Tab(text: 'Pending Approval'),
                         ],
                       ),
                     ),
@@ -218,6 +223,7 @@ class _UnitsScreenState extends State<UnitsScreen> with TickerProviderStateMixin
                   children: [
                     _buildUnitsTab(),
                     _buildDamageControlTab(),
+                    _buildPendingApprovalTab(),
                   ],
                 ),
               ),
@@ -318,18 +324,50 @@ class _UnitsScreenState extends State<UnitsScreen> with TickerProviderStateMixin
                               ),
                             ],
                           ),
-                          ElevatedButton.icon(
-                            onPressed: () => _navigateToAddUnit(),
-                            icon: const Icon(Icons.add_rounded),
-                            label: const Text('Add Unit'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF667eea),
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
+                          Row(
+                            children: [
+                              ElevatedButton.icon(
+                                onPressed: () => _showBuildingSettingsDialog(),
+                                icon: const Icon(Icons.settings_rounded, size: 18),
+                                label: const Text('Settings'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.grey[700],
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                ),
                               ),
-                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                            ),
+                              const SizedBox(width: 8),
+                              ElevatedButton.icon(
+                                onPressed: () => _navigateToMonthlyBills(),
+                                icon: const Icon(Icons.receipt_long, size: 18),
+                                label: const Text('Monthly Bills'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.orange[700],
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              ElevatedButton.icon(
+                                onPressed: () => _navigateToAddUnit(),
+                                icon: const Icon(Icons.add_rounded),
+                                label: const Text('Add Unit'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF667eea),
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
@@ -1029,6 +1067,17 @@ class _UnitsScreenState extends State<UnitsScreen> with TickerProviderStateMixin
     ).then((_) => _loadStats());
   }
 
+  void _navigateToMonthlyBills() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => MonthlyBillsScreen(
+          rentalId: selectedRentalId!,
+        ),
+      ),
+    ).then((_) => _loadStats());
+  }
+
   void _navigateToEditUnit(Unit unit) {
     Navigator.push(
       context,
@@ -1286,4 +1335,422 @@ class _UnitsScreenState extends State<UnitsScreen> with TickerProviderStateMixin
       ),
     );
   }
+
+  Widget _buildPendingApprovalTab() {
+    return FutureBuilder<List<PendingUnit>>(
+      future: _loadPendingUnits(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (snapshot.hasError) {
+          return Center(child: Text('Error: ${snapshot.error}'));
+        }
+
+        final pendingUnits = snapshot.data ?? [];
+
+        if (pendingUnits.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.check_circle_outline, size: 64, color: Colors.green[400]),
+                const SizedBox(height: 16),
+                Text(
+                  'All Units Approved!',
+                  style: TextStyle(fontSize: 18, color: Colors.grey[600], fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'No pending units from SMS',
+                  style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: pendingUnits.length,
+          itemBuilder: (context, index) {
+            final unit = pendingUnits[index];
+            return Card(
+              margin: const EdgeInsets.only(bottom: 12),
+              child: ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(Icons.home_work_rounded, color: Colors.orange[600]),
+                ),
+                title: Text('Unit ${unit.unitRef}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: Text('KES ${unit.amount.toStringAsFixed(0)} • ${unit.transactionCount} SMS'),
+                trailing: IconButton(
+                  icon: const Icon(Icons.check_circle, color: Colors.green),
+                  onPressed: () => _approveUnit(unit),
+                  tooltip: 'Approve Unit',
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<List<PendingUnit>> _loadPendingUnits() async {
+    if (selectedRentalId == null) return [];
+
+    try {
+      final smsService = SMSService();
+      final smsTransactions = await smsService.getSMSTransactions(selectedRentalId!);
+      
+      // Get existing units
+      final existingUnits = await _getExistingUnits();
+      
+      // Find units in SMS that don't exist
+      Set<String> pendingUnitRefs = {};
+      Map<String, SMSTransaction> unitTransactions = {};
+      
+      for (var transaction in smsTransactions) {
+        if (transaction.unit.isNotEmpty && !existingUnits.contains(transaction.unit)) {
+          pendingUnitRefs.add(transaction.unit);
+          if (!unitTransactions.containsKey(transaction.unit) ||
+              transaction.date.isAfter(unitTransactions[transaction.unit]!.date)) {
+            unitTransactions[transaction.unit] = transaction;
+          }
+        }
+      }
+      
+      // Create pending unit objects
+      List<PendingUnit> pendingUnits = [];
+      for (String unitRef in pendingUnitRefs) {
+        final transaction = unitTransactions[unitRef]!;
+        pendingUnits.add(PendingUnit(
+          unitRef: unitRef,
+          buildingRef: transaction.building,
+          amount: transaction.amount,
+          lastSMSDate: transaction.date,
+          transactionCount: smsTransactions.where((t) => t.unit == unitRef).length,
+          sampleTransaction: transaction,
+        ));
+      }
+      
+      return pendingUnits;
+    } catch (e) {
+      print('Error loading pending units: $e');
+      return [];
+    }
+  }
+
+  Future<Set<String>> _getExistingUnits() async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('rentals')
+          .doc(selectedRentalId!)
+          .collection('units')
+          .get();
+      
+      return snapshot.docs.map((doc) => doc.data()['unitNumber'] as String).toSet();
+    } catch (e) {
+      return <String>{};
+    }
+  }
+
+  Future<void> _approveUnit(PendingUnit unit) async {
+    try {
+      // Create the unit
+      await FirebaseFirestore.instance
+          .collection('rentals')
+          .doc(selectedRentalId!)
+          .collection('units')
+          .add({
+        'unitNumber': unit.unitRef,
+        'unitName': 'Unit ${unit.unitRef}',
+        'type': 'apartment',
+        'status': 'occupied',
+        'rent': unit.amount,
+        'tenantId': null,
+        'tenantName': 'Unknown',
+        'description': 'Auto-created from SMS payment',
+        'bedrooms': 1,
+        'bathrooms': 1,
+        'area': null,
+        'amenities': [],
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+        'balance': 0.0,
+        'totalPaid': 0.0,
+        'lastPaymentAmount': unit.amount,
+        'lastPaymentDate': unit.lastSMSDate,
+        'createdFrom': 'sms_approval',
+      });
+
+      // Set up payment structure
+      final smsService = SMSService();
+      await smsService.setPaymentStructure(
+        selectedRentalId!,
+        unit.unitRef,
+        PaymentStructure(
+          unitRef: unit.unitRef,
+          totalRent: unit.amount,
+          breakdown: {'rent': unit.amount},
+          dueDate: 5,
+          penalties: {},
+        ),
+      );
+
+      // Update SMS transactions
+      final transactions = await smsService.getSMSTransactions(selectedRentalId!);
+      for (var transaction in transactions) {
+        if (transaction.unit == unit.unitRef && transaction.status == 'pending') {
+          await FirebaseFirestore.instance
+              .collection('rentals')
+              .doc(selectedRentalId!)
+              .collection('smsTransactions')
+              .doc(transaction.id)
+              .update({'status': 'matched'});
+        }
+      }
+
+      // Refresh the tab
+      setState(() {});
+      _loadStats();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Unit ${unit.unitRef} approved successfully!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error approving unit: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _showBuildingSettingsDialog() async {
+    // Load current settings
+    final doc = await FirebaseFirestore.instance
+        .collection('rentals')
+        .doc(selectedRentalId!)
+        .get();
+    
+    final data = doc.data();
+    final paymentSettings = data?['paymentSettings'] as Map<String, dynamic>?;
+    
+    int dueDate = paymentSettings?['dueDate'] ?? 5;
+    double lateRentFixed = (paymentSettings?['penalties']?['lateRent']?['fixed'] ?? 200).toDouble();
+    double lateRentPerDay = (paymentSettings?['penalties']?['lateRent']?['perDay'] ?? 50).toDouble();
+    double partialPaymentPerDay = (paymentSettings?['penalties']?['partialPayment']?['perDay'] ?? 50).toDouble();
+    
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF667eea), Color(0xFF764ba2)],
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.settings_rounded, color: Colors.white, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  const Text('Building Payment Settings'),
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Due Date',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<int>(
+                      value: dueDate,
+                      decoration: InputDecoration(
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      ),
+                      items: List.generate(28, (index) => index + 1)
+                          .map((day) => DropdownMenuItem(
+                                value: day,
+                                child: Text('$day${_getDaySuffix(day)} of every month'),
+                              ))
+                          .toList(),
+                      onChanged: (value) {
+                        setState(() {
+                          dueDate = value!;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 24),
+                    const Text(
+                      'Late Rent Penalty (No payment or less than rent)',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      decoration: InputDecoration(
+                        labelText: 'Fixed Penalty (KES)',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        prefixText: 'KES ',
+                      ),
+                      keyboardType: TextInputType.number,
+                      controller: TextEditingController(text: lateRentFixed.toStringAsFixed(0))
+                        ..selection = TextSelection.fromPosition(
+                          TextPosition(offset: lateRentFixed.toStringAsFixed(0).length),
+                        ),
+                      onChanged: (value) {
+                        lateRentFixed = double.tryParse(value) ?? lateRentFixed;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      decoration: InputDecoration(
+                        labelText: 'Per Day Penalty (KES)',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        prefixText: 'KES ',
+                        suffixText: '/day',
+                      ),
+                      keyboardType: TextInputType.number,
+                      controller: TextEditingController(text: lateRentPerDay.toStringAsFixed(0))
+                        ..selection = TextSelection.fromPosition(
+                          TextPosition(offset: lateRentPerDay.toStringAsFixed(0).length),
+                        ),
+                      onChanged: (value) {
+                        lateRentPerDay = double.tryParse(value) ?? lateRentPerDay;
+                      },
+                    ),
+                    const SizedBox(height: 24),
+                    const Text(
+                      'Partial Payment Penalty (Paid rent but missing bills)',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      decoration: InputDecoration(
+                        labelText: 'Per Day Penalty (KES)',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        prefixText: 'KES ',
+                        suffixText: '/day',
+                      ),
+                      keyboardType: TextInputType.number,
+                      controller: TextEditingController(text: partialPaymentPerDay.toStringAsFixed(0))
+                        ..selection = TextSelection.fromPosition(
+                          TextPosition(offset: partialPaymentPerDay.toStringAsFixed(0).length),
+                        ),
+                      onChanged: (value) {
+                        partialPaymentPerDay = double.tryParse(value) ?? partialPaymentPerDay;
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF667eea),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: () async {
+                    try {
+                      await FirebaseFirestore.instance
+                          .collection('rentals')
+                          .doc(selectedRentalId!)
+                          .update({
+                        'paymentSettings': {
+                          'dueDate': dueDate,
+                          'penalties': {
+                            'lateRent': {
+                              'fixed': lateRentFixed,
+                              'perDay': lateRentPerDay,
+                            },
+                            'partialPayment': {
+                              'perDay': partialPaymentPerDay,
+                            },
+                          },
+                        },
+                      });
+                      
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Building settings saved successfully!'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                    } catch (e) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Error saving settings: $e'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  },
+                  child: const Text('Save', style: TextStyle(color: Colors.white)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  String _getDaySuffix(int day) {
+    if (day >= 11 && day <= 13) return 'th';
+    switch (day % 10) {
+      case 1:
+        return 'st';
+      case 2:
+        return 'nd';
+      case 3:
+        return 'rd';
+      default:
+        return 'th';
+    }
+  }
+}
+
+class PendingUnit {
+  final String unitRef;
+  final String buildingRef;
+  final double amount;
+  final DateTime lastSMSDate;
+  final int transactionCount;
+  final SMSTransaction sampleTransaction;
+
+  PendingUnit({
+    required this.unitRef,
+    required this.buildingRef,
+    required this.amount,
+    required this.lastSMSDate,
+    required this.transactionCount,
+    required this.sampleTransaction,
+  });
 }

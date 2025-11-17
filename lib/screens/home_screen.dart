@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -16,9 +17,6 @@ import 'units_screen.dart';
 import 'sms_screen.dart';
 import 'expenses_screen.dart';
 import 'reports_screen.dart';
-import 'payment_structure_screen.dart';
-import 'unit_approval_screen.dart';
-import 'penalty_calculator_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -2086,80 +2084,6 @@ class _DashboardPageState extends State<DashboardPage> {
             ),
           ],
         ),
-        const SizedBox(height: 16),
-        Row(
-          children: [
-            Expanded(
-              child: _buildQuickActionCard(
-                icon: Icons.payment_rounded,
-                title: 'Payment Structure',
-                onTap: () {
-                  if (widget.selectedBuildingId != null) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => PaymentStructureScreen(
-                          buildingId: widget.selectedBuildingId!,
-                          buildingName: widget.selectedBuildingName,
-                        ),
-                      ),
-                    );
-                  }
-                },
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildQuickActionCard(
-                icon: Icons.sync_rounded,
-                title: 'Sync Settings',
-                onTap: () {
-                  _showSyncSettingsDialog();
-                },
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildQuickActionCard(
-                icon: Icons.approval_rounded,
-                title: 'Unit Approval',
-                onTap: () {
-                  if (widget.selectedBuildingId != null) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => UnitApprovalScreen(
-                          buildingId: widget.selectedBuildingId!,
-                          buildingName: widget.selectedBuildingName,
-                        ),
-                      ),
-                    );
-                  }
-                },
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildQuickActionCard(
-                icon: Icons.calculate_rounded,
-                title: 'Penalty Calculator',
-                onTap: () {
-                  if (widget.selectedBuildingId != null) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => PenaltyCalculatorScreen(
-                          buildingId: widget.selectedBuildingId!,
-                          buildingName: widget.selectedBuildingName,
-                        ),
-                      ),
-                    );
-                  }
-                },
-              ),
-            ),
-          ],
-        ),
       ],
     );
   }
@@ -2211,80 +2135,6 @@ class _DashboardPageState extends State<DashboardPage> {
                 title: 'Add Expense',
                 onTap: () {
                   // Navigate to expenses screen
-                },
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: _buildQuickActionCard(
-                icon: Icons.payment_rounded,
-                title: 'Payment Structure',
-                onTap: () {
-                  if (widget.selectedBuildingId != null) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => PaymentStructureScreen(
-                          buildingId: widget.selectedBuildingId!,
-                          buildingName: widget.selectedBuildingName,
-                        ),
-                      ),
-                    );
-                  }
-                },
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildQuickActionCard(
-                icon: Icons.sync_rounded,
-                title: 'Sync Settings',
-                onTap: () {
-                  _showSyncSettingsDialog();
-                },
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildQuickActionCard(
-                icon: Icons.approval_rounded,
-                title: 'Unit Approval',
-                onTap: () {
-                  if (widget.selectedBuildingId != null) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => UnitApprovalScreen(
-                          buildingId: widget.selectedBuildingId!,
-                          buildingName: widget.selectedBuildingName,
-                        ),
-                      ),
-                    );
-                  }
-                },
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildQuickActionCard(
-                icon: Icons.calculate_rounded,
-                title: 'Penalty Calculator',
-                onTap: () {
-                  if (widget.selectedBuildingId != null) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => PenaltyCalculatorScreen(
-                          buildingId: widget.selectedBuildingId!,
-                          buildingName: widget.selectedBuildingName,
-                        ),
-                      ),
-                    );
-                  }
                 },
               ),
             ),
@@ -2650,6 +2500,35 @@ class _DashboardPageState extends State<DashboardPage> {
 
     try {
       final SMSService smsService = SMSService();
+      
+      // Check if bank is configured first
+      String? bankId = await smsService.getBuildingBank(widget.selectedBuildingId!);
+      if (bankId == null) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: Row(
+              children: [
+                Icon(Icons.warning_amber_rounded, color: Colors.orange),
+                const SizedBox(width: 8),
+                const Text('Bank Not Configured'),
+              ],
+            ),
+            content: const Text(
+              'Please configure a bank for this building first before setting sync date.\n\nGo to SMS Transactions → Bank Assignment to configure.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+      
       DateTime? currentStartDate = await smsService.getSyncStartDate(widget.selectedBuildingId!);
       
       showDialog(
@@ -3350,6 +3229,9 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
         automaticallyImplyLeading: false,
         bottom: TabBar(
           controller: _tabController,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white.withOpacity(0.7),
+          indicatorColor: Colors.white,
           tabs: const [
             Tab(text: 'Payments'),
             Tab(text: 'SMS Transactions'),
@@ -3433,13 +3315,14 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
                   ),
                   child: const Row(
                     children: [
-                      Expanded(flex: 2, child: Text('Tenant', style: TextStyle(fontWeight: FontWeight.bold))),
-                      Expanded(flex: 1, child: Text('Unit', style: TextStyle(fontWeight: FontWeight.bold))),
-                      Expanded(flex: 2, child: Text('Amount', style: TextStyle(fontWeight: FontWeight.bold))),
-                      Expanded(flex: 2, child: Text('Date', style: TextStyle(fontWeight: FontWeight.bold))),
-                      Expanded(flex: 2, child: Text('Method', style: TextStyle(fontWeight: FontWeight.bold))),
-                      Expanded(flex: 1, child: Text('Status', style: TextStyle(fontWeight: FontWeight.bold))),
-                      Expanded(flex: 1, child: Text('Actions', style: TextStyle(fontWeight: FontWeight.bold))),
+                      Expanded(flex: 2, child: Text('Reference', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+                      Expanded(flex: 2, child: Text('Tenant', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+                      Expanded(flex: 1, child: Text('Unit', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+                      Expanded(flex: 2, child: Text('Amount', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+                      Expanded(flex: 2, child: Text('Date', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+                      Expanded(flex: 2, child: Text('Method', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+                      Expanded(flex: 1, child: Text('Status', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+                      SizedBox(width: 60, child: Text('Actions', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
                     ],
                   ),
                 ),
@@ -3467,8 +3350,28 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
                           final payment = filteredPayments[index];
                           final data = payment.data() as Map<String, dynamic>;
                           
+                          // Extract data
+                          String reference = data['reference'] ?? 'N/A';
+                          String unitRef = data['unitRef'] ?? 'N/A';
+                          double amount = (data['amount'] ?? 0).toDouble();
+                          String method = data['method'] ?? 'N/A';
+                          String status = data['status'] ?? 'pending';
+                          
+                          DateTime paymentDate;
+                          try {
+                            if (data['paymentDate'] is Timestamp) {
+                              paymentDate = (data['paymentDate'] as Timestamp).toDate();
+                            } else {
+                              paymentDate = DateTime.now();
+                            }
+                          } catch (e) {
+                            paymentDate = DateTime.now();
+                          }
+                          
+                          String formattedDate = '${paymentDate.day}/${paymentDate.month}/${paymentDate.year}';
+                          
                           return Container(
-                            padding: const EdgeInsets.all(16),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                             decoration: BoxDecoration(
                               border: Border(
                                 bottom: BorderSide(color: Colors.grey.shade200),
@@ -3476,27 +3379,73 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
                             ),
                             child: Row(
                               children: [
-                                Expanded(flex: 2, child: Text(data['tenantName'] ?? 'Unknown')),
-                                Expanded(flex: 1, child: Text(data['unit'] ?? 'N/A')),
-                                Expanded(flex: 2, child: Text('KES ${data['amount'] ?? 0}')),
-                                Expanded(flex: 2, child: Text(data['date'] ?? 'N/A')),
-                                Expanded(flex: 2, child: Text(data['method'] ?? 'N/A')),
                                 Expanded(
-                                  flex: 1,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: data['status'] == 'Completed' ? Colors.green : const Color(0xFF667eea),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: Text(
-                                      data['status'] ?? 'Pending',
-                                      style: const TextStyle(color: Colors.white, fontSize: 12),
-                                    ),
+                                  flex: 2,
+                                  child: Text(
+                                    reference,
+                                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 2,
+                                  child: FutureBuilder<String>(
+                                    future: _getTenantNameForUnit(unitRef),
+                                    builder: (context, snapshot) {
+                                      return Text(
+                                        snapshot.data ?? 'Loading...',
+                                        style: const TextStyle(fontSize: 13),
+                                        overflow: TextOverflow.ellipsis,
+                                      );
+                                    },
                                   ),
                                 ),
                                 Expanded(
                                   flex: 1,
+                                  child: Text(
+                                    unitRef,
+                                    style: const TextStyle(fontSize: 13),
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 2,
+                                  child: Text(
+                                    'KES ${amount.toStringAsFixed(0)}',
+                                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 2,
+                                  child: Text(
+                                    formattedDate,
+                                    style: const TextStyle(fontSize: 13),
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 2,
+                                  child: Text(
+                                    method,
+                                    style: const TextStyle(fontSize: 13),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 1,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: status == 'complete' ? Colors.green : Colors.orange,
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Text(
+                                      status == 'complete' ? 'Paid' : 'Partial',
+                                      style: const TextStyle(color: Colors.white, fontSize: 11),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(
+                                  width: 60,
                                   child: PopupMenuButton<String>(
                                     onSelected: (value) => _handlePaymentAction(payment.id, value),
                                     itemBuilder: (context) => [
@@ -3504,6 +3453,7 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
                                       const PopupMenuItem(value: 'edit', child: Text('Edit')),
                                       const PopupMenuItem(value: 'delete', child: Text('Delete')),
                                     ],
+                                    padding: EdgeInsets.zero,
                                   ),
                                 ),
                               ],
@@ -4984,6 +4934,35 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
 
     try {
       final SMSService smsService = SMSService();
+      
+      // Check if bank is configured first
+      String? bankId = await smsService.getBuildingBank(widget.selectedBuildingId!);
+      if (bankId == null) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: Row(
+              children: [
+                Icon(Icons.warning_amber_rounded, color: Colors.orange),
+                const SizedBox(width: 8),
+                const Text('Bank Not Configured'),
+              ],
+            ),
+            content: const Text(
+              'Please configure a bank for this building first before setting sync date.\n\nGo to SMS Transactions → Bank Assignment to configure.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+      
       DateTime? currentStartDate = await smsService.getSyncStartDate(widget.selectedBuildingId!);
       
       showDialog(
@@ -5283,7 +5262,7 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
   Widget _buildReceiptsTab() {
     return Column(
       children: [
-        // Header with search and generate receipt button
+        // Header with search and download all button
         Container(
           padding: const EdgeInsets.all(16),
           child: Row(
@@ -5291,7 +5270,7 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
               Expanded(
                 child: TextField(
                   decoration: InputDecoration(
-                    hintText: 'Search by receipt, unit...',
+                    hintText: 'Search by unit, tenant...',
                     prefixIcon: const Icon(Icons.search),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
@@ -5301,19 +5280,19 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
               ),
               const SizedBox(width: 16),
               ElevatedButton.icon(
-                onPressed: () {},
+                onPressed: () => _downloadAllReceipts(),
                 icon: const Icon(Icons.download),
-                label: const Text('Export'),
+                label: const Text('Download All'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.grey,
+                  backgroundColor: Colors.green,
                   foregroundColor: Colors.white,
                 ),
               ),
               const SizedBox(width: 8),
               ElevatedButton.icon(
-                onPressed: () => _showGenerateReceiptDialog(),
-                icon: const Icon(Icons.receipt),
-                label: const Text('Generate Receipt'),
+                onPressed: () => _reloadPaymentsForReceipts(),
+                icon: const Icon(Icons.refresh),
+                label: const Text('Reload'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF667eea),
                   foregroundColor: Colors.white,
@@ -5322,7 +5301,7 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
             ],
           ),
         ),
-        // Receipts Table
+        // Receipts Table (showing payments directly)
         Expanded(
           child: Container(
             margin: const EdgeInsets.all(16),
@@ -5351,18 +5330,18 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
                   ),
                   child: const Row(
                     children: [
-                      Expanded(flex: 1, child: Text('Receipt No', style: TextStyle(fontWeight: FontWeight.bold))),
-                      Expanded(flex: 2, child: Text('Tenant', style: TextStyle(fontWeight: FontWeight.bold))),
-                      Expanded(flex: 1, child: Text('Unit', style: TextStyle(fontWeight: FontWeight.bold))),
-                      Expanded(flex: 2, child: Text('Payment Date', style: TextStyle(fontWeight: FontWeight.bold))),
-                      Expanded(flex: 2, child: Text('Amount', style: TextStyle(fontWeight: FontWeight.bold))),
-                      Expanded(flex: 2, child: Text('Method', style: TextStyle(fontWeight: FontWeight.bold))),
-                      Expanded(flex: 1, child: Text('Status', style: TextStyle(fontWeight: FontWeight.bold))),
-                      Expanded(flex: 2, child: Text('Actions', style: TextStyle(fontWeight: FontWeight.bold))),
+                      Expanded(flex: 2, child: Text('Reference/Receipt No', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+                      Expanded(flex: 2, child: Text('Tenant', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+                      Expanded(flex: 1, child: Text('Unit', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+                      Expanded(flex: 2, child: Text('Date', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+                      Expanded(flex: 2, child: Text('Amount', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+                      Expanded(flex: 2, child: Text('Method', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+                      Expanded(flex: 1, child: Text('Status', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+                      SizedBox(width: 60, child: Text('Action', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
                     ],
                   ),
                 ),
-                // Real Receipt Data
+                // Payments as Receipts
                 Expanded(
                   child: widget.selectedBuildingId == null
                       ? Center(
@@ -5386,7 +5365,7 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
                           ),
                         )
                       : StreamBuilder<QuerySnapshot>(
-                          stream: _getReceiptsStream(),
+                          stream: _getPaymentsStream(),
                           builder: (context, snapshot) {
                             if (snapshot.connectionState == ConnectionState.waiting) {
                               return const Center(
@@ -5405,9 +5384,9 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
                               );
                             }
 
-                            final receipts = snapshot.data?.docs ?? [];
+                            final payments = snapshot.data?.docs ?? [];
 
-                            if (receipts.isEmpty) {
+                            if (payments.isEmpty) {
                               return Center(
                                 child: Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
@@ -5419,7 +5398,7 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
                                     ),
                                     const SizedBox(height: 16),
                                     Text(
-                                      'No receipts found',
+                                      'No payments found',
                                       style: TextStyle(
                                         fontSize: 18,
                                         color: Colors.grey[600],
@@ -5428,7 +5407,7 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
                                     ),
                                     const SizedBox(height: 8),
                                     Text(
-                                      'Generate receipts for payments to see them here',
+                                      'Payments will automatically appear here as receipts',
                                       style: TextStyle(
                                         fontSize: 14,
                                         color: Colors.grey[500],
@@ -5440,12 +5419,12 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
                             }
 
                             return ListView.builder(
-                              itemCount: receipts.length,
+                              itemCount: payments.length,
                               itemBuilder: (context, index) {
-                                final receipt = receipts[index];
-                                final data = receipt.data() as Map<String, dynamic>;
+                                final payment = payments[index];
+                                final data = payment.data() as Map<String, dynamic>;
                                 
-                                return _buildReceiptRowFromData(data);
+                                return _buildPaymentAsReceiptRow(payment.id, data);
                               },
                             );
                           },
@@ -5516,9 +5495,15 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
     String paymentMethod = data['payment']?['method'] ?? 'N/A';
     double amount = (data['payment']?['amount'] ?? 0).toDouble();
     
-    DateTime? paymentDate;
+    DateTime paymentDate;
     try {
-      paymentDate = DateTime.parse(data['date'] ?? '');
+      if (data['date'] is Timestamp) {
+        paymentDate = (data['date'] as Timestamp).toDate();
+      } else if (data['date'] is String) {
+        paymentDate = DateTime.parse(data['date']);
+      } else {
+        paymentDate = DateTime.now();
+      }
     } catch (e) {
       paymentDate = DateTime.now();
     }
@@ -5572,6 +5557,312 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildPaymentAsReceiptRow(String paymentId, Map<String, dynamic> data) {
+    // Use reference as receipt number, fallback to generated one
+    String reference = data['reference'] ?? '';
+    String receiptNo = reference.isNotEmpty ? reference : 'RCP-${paymentId.substring(0, 8).toUpperCase()}';
+    String unitRef = data['unitRef'] ?? 'N/A';
+    String paymentMethod = data['method'] ?? 'N/A';
+    double amount = (data['amount'] ?? 0).toDouble();
+    String status = data['status'] ?? 'complete';
+    
+    DateTime paymentDate;
+    try {
+      if (data['paymentDate'] is Timestamp) {
+        paymentDate = (data['paymentDate'] as Timestamp).toDate();
+      } else {
+        paymentDate = DateTime.now();
+      }
+    } catch (e) {
+      paymentDate = DateTime.now();
+    }
+    
+    String formattedDate = '${paymentDate.day}/${paymentDate.month}/${paymentDate.year}';
+    String formattedAmount = 'KES ${amount.toStringAsFixed(0)}';
+    
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: Colors.grey.shade200),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 2,
+            child: Text(
+              receiptNo,
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: FutureBuilder<String>(
+              future: _getTenantNameForUnit(unitRef),
+              builder: (context, snapshot) {
+                return Text(
+                  snapshot.data ?? 'Loading...',
+                  style: const TextStyle(fontSize: 13),
+                  overflow: TextOverflow.ellipsis,
+                );
+              },
+            ),
+          ),
+          Expanded(
+            flex: 1,
+            child: Text(
+              unitRef,
+              style: const TextStyle(fontSize: 13),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Text(
+              formattedDate,
+              style: const TextStyle(fontSize: 13),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Text(
+              formattedAmount,
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Text(
+              paymentMethod,
+              style: const TextStyle(fontSize: 13),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          Expanded(
+            flex: 1,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              decoration: BoxDecoration(
+                color: status == 'complete' ? Colors.green : Colors.orange,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                status == 'complete' ? 'Paid' : 'Partial',
+                style: const TextStyle(color: Colors.white, fontSize: 11),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 60,
+            child: Center(
+              child: IconButton(
+                icon: const Icon(Icons.download, size: 20),
+                color: const Color(0xFF667eea),
+                onPressed: () => _downloadPaymentReceipt(paymentId, data),
+                tooltip: 'Download Receipt',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<String> _getTenantNameForUnit(String unitRef) async {
+    try {
+      if (widget.selectedBuildingId == null) return 'Unknown';
+      
+      final unitsSnapshot = await FirebaseFirestore.instance
+          .collection('rentals')
+          .doc(widget.selectedBuildingId!)
+          .collection('units')
+          .where('unitNumber', isEqualTo: unitRef)
+          .limit(1)
+          .get();
+
+      if (unitsSnapshot.docs.isNotEmpty) {
+        final unitData = unitsSnapshot.docs.first.data();
+        final tenantId = unitData['tenantId'];
+        
+        if (tenantId != null) {
+          final tenantDoc = await FirebaseFirestore.instance
+              .collection('rentals')
+              .doc(widget.selectedBuildingId!)
+              .collection('tenants')
+              .doc(tenantId)
+              .get();
+          
+          if (tenantDoc.exists) {
+            return tenantDoc.data()?['name'] ?? 'Unknown';
+          }
+        }
+      }
+      return 'Vacant';
+    } catch (e) {
+      return 'Unknown';
+    }
+  }
+
+  void _downloadPaymentReceipt(String paymentId, Map<String, dynamic> paymentData) async {
+    try {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              ),
+              SizedBox(width: 12),
+              Text('Generating receipt...'),
+            ],
+          ),
+          backgroundColor: Color(0xFF667eea),
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      final receiptService = ReceiptService();
+      
+      // Get tenant ID from unit
+      String? tenantId;
+      final unitsSnapshot = await FirebaseFirestore.instance
+          .collection('rentals')
+          .doc(widget.selectedBuildingId!)
+          .collection('units')
+          .where('unitNumber', isEqualTo: paymentData['unitRef'])
+          .limit(1)
+          .get();
+
+      if (unitsSnapshot.docs.isNotEmpty) {
+        tenantId = unitsSnapshot.docs.first.data()['tenantId'];
+      }
+
+      if (tenantId == null) {
+        throw Exception('Tenant not found for this unit');
+      }
+
+      Map<String, dynamic> receiptData = await receiptService.generateReceipt(
+        buildingId: widget.selectedBuildingId!,
+        tenantId: tenantId,
+        amount: (paymentData['amount'] ?? 0).toDouble(),
+        paymentMethod: paymentData['method'] ?? 'Cash',
+        paymentDate: (paymentData['paymentDate'] as Timestamp?)?.toDate() ?? DateTime.now(),
+        reference: paymentData['reference'] ?? paymentId,
+        breakdown: paymentData['breakdown'] != null 
+            ? Map<String, double>.from(paymentData['breakdown']) 
+            : {'Rent Payment': (paymentData['amount'] ?? 0).toDouble()},
+      );
+
+      await receiptService.copyReceiptToClipboard(receiptData);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Receipt ${receiptData['receiptNo']} downloaded to clipboard!'),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error generating receipt: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _downloadAllReceipts() async {
+    try {
+      if (widget.selectedBuildingId == null) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Downloading all receipts...'),
+          backgroundColor: Color(0xFF667eea),
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      final paymentsSnapshot = await FirebaseFirestore.instance
+          .collection('rentals')
+          .doc(widget.selectedBuildingId!)
+          .collection('payments')
+          .orderBy('createdAt', descending: true)
+          .get();
+
+      if (paymentsSnapshot.docs.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No payments found to download'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      StringBuffer allReceipts = StringBuffer();
+      allReceipts.writeln('═══════════════════════════════════════');
+      allReceipts.writeln('         ALL PAYMENT RECEIPTS');
+      allReceipts.writeln('═══════════════════════════════════════');
+      allReceipts.writeln();
+
+      for (var doc in paymentsSnapshot.docs) {
+        final data = doc.data();
+        String receiptNo = 'RCP-${doc.id.substring(0, 8).toUpperCase()}';
+        String unitRef = data['unitRef'] ?? 'N/A';
+        double amount = (data['amount'] ?? 0).toDouble();
+        DateTime paymentDate = (data['paymentDate'] as Timestamp?)?.toDate() ?? DateTime.now();
+        String method = data['method'] ?? 'N/A';
+        
+        allReceipts.writeln('Receipt: $receiptNo');
+        allReceipts.writeln('Unit: $unitRef');
+        allReceipts.writeln('Amount: KES ${amount.toStringAsFixed(0)}');
+        allReceipts.writeln('Date: ${paymentDate.day}/${paymentDate.month}/${paymentDate.year}');
+        allReceipts.writeln('Method: $method');
+        allReceipts.writeln('─────────────────────────────────────');
+      }
+
+      await Clipboard.setData(ClipboardData(text: allReceipts.toString()));
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${paymentsSnapshot.docs.length} receipts downloaded to clipboard!'),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error downloading receipts: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _reloadPaymentsForReceipts() {
+    setState(() {
+      // This will trigger a rebuild and reload the stream
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Receipts reloaded!'),
+        backgroundColor: Colors.green,
+        duration: Duration(seconds: 1),
       ),
     );
   }
@@ -5693,6 +5984,16 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
   }
 
   void _showGenerateReceiptDialog() {
+    if (widget.selectedBuildingId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a building first'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -5720,51 +6021,116 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
             const Text('Generate Receipt'),
           ],
         ),
-        content: const Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Select a payment to generate receipt:',
-              style: TextStyle(fontSize: 16),
-            ),
-            SizedBox(height: 16),
-            Text(
-              'This feature will allow you to:',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-            ),
-            SizedBox(height: 8),
-            Text('• Generate PDF receipts for payments'),
-            Text('• Include payment breakdown details'),
-            Text('• Add building and tenant information'),
-            Text('• Download or print receipts'),
-            SizedBox(height: 16),
-            Text(
-              'Receipt will be generated and copied to clipboard for easy sharing.',
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey,
-                fontStyle: FontStyle.italic,
-              ),
-            ),
-          ],
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 400,
+          child: StreamBuilder<QuerySnapshot>(
+            stream: _getPaymentsStream(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                return const Center(
+                  child: Text('No payments found.\nMake a payment first to generate receipts.'),
+                );
+              }
+
+              return ListView.builder(
+                itemCount: snapshot.data!.docs.length,
+                itemBuilder: (context, index) {
+                  final doc = snapshot.data!.docs[index];
+                  final data = doc.data() as Map<String, dynamic>;
+                  final amount = (data['amount'] ?? 0).toDouble();
+                  final date = (data['date'] as Timestamp?)?.toDate() ?? DateTime.now();
+                  final unit = data['unitRef'] ?? 'N/A';
+                  final method = data['method'] ?? 'Cash';
+
+                  return ListTile(
+                    leading: const Icon(Icons.payment, color: Color(0xFF667eea)),
+                    title: Text('Unit $unit - KES ${amount.toStringAsFixed(0)}'),
+                    subtitle: Text('${date.day}/${date.month}/${date.year} • $method'),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.receipt_long, color: Colors.green),
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _generateReceiptForPayment(doc.id, data);
+                      },
+                    ),
+                  );
+                },
+              );
+            },
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Close'),
           ),
-          ElevatedButton(
-            onPressed: () => _generateSampleReceipt(context),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF667eea),
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Generate Sample Receipt'),
-          ),
         ],
       ),
     );
+  }
+
+  void _generateReceiptForPayment(String paymentId, Map<String, dynamic> paymentData) async {
+    try {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              ),
+              SizedBox(width: 12),
+              Text('Generating receipt...'),
+            ],
+          ),
+          backgroundColor: Color(0xFF667eea),
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      final receiptService = ReceiptService();
+      
+      Map<String, dynamic> receiptData = await receiptService.generateReceipt(
+        buildingId: widget.selectedBuildingId!,
+        tenantId: paymentData['tenantId'] ?? 'unknown',
+        amount: (paymentData['amount'] ?? 0).toDouble(),
+        paymentMethod: paymentData['method'] ?? 'Cash',
+        paymentDate: (paymentData['date'] as Timestamp?)?.toDate() ?? DateTime.now(),
+        reference: paymentData['reference'] ?? paymentId,
+        breakdown: paymentData['breakdown'] != null 
+            ? Map<String, double>.from(paymentData['breakdown']) 
+            : {'Rent Payment': (paymentData['amount'] ?? 0).toDouble()},
+      );
+
+      await receiptService.copyReceiptToClipboard(receiptData);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Receipt ${receiptData['receiptNo']} generated and copied to clipboard!'),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          action: SnackBarAction(
+            label: 'View',
+            textColor: Colors.white,
+            onPressed: () => _showReceiptPreview(receiptData),
+          ),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error generating receipt: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   void _generateSampleReceipt(BuildContext context) async {

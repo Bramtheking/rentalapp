@@ -1,5 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../models/sms_format_model.dart';
+import '../models/unit_model.dart';
 
 class PaymentTrackingService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -14,33 +14,41 @@ class PaymentTrackingService {
     required String method,
   }) async {
     try {
-      // Get payment structure for the unit
-      final paymentStructure = await _getPaymentStructure(buildingId, unitRef);
-      if (paymentStructure == null) {
+      // Get unit data
+      final unit = await _getUnit(buildingId, unitRef);
+      if (unit == null) {
         return PaymentResult(
           success: false,
-          message: 'No payment structure found for unit $unitRef',
+          message: 'Unit $unitRef not found',
           isComplete: false,
           remainingAmount: amount,
         );
       }
 
+      // Calculate total required for this month
+      final totalRequired = _calculateTotalRequired(unit);
+      
       // Get existing partial payments for current month
       final currentMonth = DateTime(paymentDate.year, paymentDate.month);
       final existingPayments = await _getMonthlyPayments(buildingId, unitRef, currentMonth);
       
-      // Calculate total paid so far
-      double totalPaid = existingPayments.fold(0.0, (sum, payment) => sum + payment['amount']);
-      double newTotal = totalPaid + amount;
+      // Calculate total paid so far (including credit balance)
+      double totalPaidThisMonth = existingPayments.fold(0.0, (total, payment) => total + (payment['amount'] as num).toDouble());
+      double effectiveAmount = amount + unit.creditBalance;
+      double newTotal = totalPaidThisMonth + effectiveAmount;
       
       // Determine payment status
-      bool isComplete = newTotal >= paymentStructure.totalRent;
-      double remainingAmount = isComplete ? 0.0 : paymentStructure.totalRent - newTotal;
+      bool isComplete = newTotal >= totalRequired;
+      double remainingAmount = isComplete ? 0.0 : totalRequired - newTotal;
+      double newCreditBalance = isComplete ? (newTotal - totalRequired) : 0.0;
+      
+      // Determine detailed status
+      String detailedStatus = _determinePaymentStatus(newTotal, unit.baseRent, totalRequired);
       
       // Calculate payment breakdown based on amount
       Map<String, double> paymentBreakdown = _calculatePaymentBreakdown(
-        paymentStructure, 
-        amount, 
+        unit, 
+        effectiveAmount, 
         existingPayments,
       );
 
@@ -49,14 +57,16 @@ class PaymentTrackingService {
         'unitRef': unitRef,
         'amount': amount,
         'totalPaid': newTotal,
-        'requiredAmount': paymentStructure.totalRent,
+        'requiredAmount': totalRequired,
         'remainingAmount': remainingAmount,
         'paymentDate': Timestamp.fromDate(paymentDate),
         'month': Timestamp.fromDate(currentMonth),
         'reference': reference,
         'method': method,
-        'status': isComplete ? 'complete' : 'partial',
+        'status': detailedStatus,
         'breakdown': paymentBreakdown,
+        'creditUsed': unit.creditBalance,
+        'newCreditBalance': newCreditBalance,
         'createdAt': FieldValue.serverTimestamp(),
       };
 
@@ -67,20 +77,28 @@ class PaymentTrackingService {
           .collection('payments')
           .add(paymentData);
 
-      // Update unit's payment status
-      await _updateUnitPaymentStatus(buildingId, unitRef, newTotal, paymentStructure.totalRent, paymentDate);
+      // Update unit's payment status and credit balance
+      await _updateUnitPaymentStatus(
+        buildingId, 
+        unit.id, 
+        newTotal, 
+        totalRequired, 
+        paymentDate,
+        detailedStatus,
+        newCreditBalance,
+      );
 
       // Calculate penalties if applicable
       if (isComplete) {
         await _clearPenalties(buildingId, unitRef, currentMonth);
       } else {
-        await _calculatePenalties(buildingId, unitRef, paymentStructure, paymentDate);
+        await _calculatePenalties(buildingId, unitRef, unit, paymentDate, newTotal);
       }
 
       return PaymentResult(
         success: true,
         message: isComplete 
-            ? 'Payment completed successfully!'
+            ? 'Payment completed successfully!' + (newCreditBalance > 0 ? ' Credit: KES ${newCreditBalance.toStringAsFixed(0)}' : '')
             : 'Partial payment recorded. Remaining: KES ${remainingAmount.toStringAsFixed(0)}',
         isComplete: isComplete,
         remainingAmount: remainingAmount,
@@ -98,22 +116,53 @@ class PaymentTrackingService {
     }
   }
 
-  /// Get payment structure for a unit
-  Future<PaymentStructure?> _getPaymentStructure(String buildingId, String unitRef) async {
+  /// Get unit data
+  Future<Unit?> _getUnit(String buildingId, String unitRef) async {
     try {
-      final doc = await _firestore.collection('rentals').doc(buildingId).get();
-      if (!doc.exists) return null;
+      final snapshot = await _firestore
+          .collection('rentals')
+          .doc(buildingId)
+          .collection('units')
+          .where('unitNumber', isEqualTo: unitRef)
+          .limit(1)
+          .get();
 
-      final data = doc.data()!;
-      final paymentStructures = data['paymentStructure'] as Map<String, dynamic>?;
-      
-      if (paymentStructures == null || !paymentStructures.containsKey(unitRef)) {
-        return null;
-      }
-
-      return PaymentStructure.fromMap(paymentStructures[unitRef], unitRef);
+      if (snapshot.docs.isEmpty) return null;
+      return Unit.fromFirestore(snapshot.docs.first);
     } catch (e) {
       return null;
+    }
+  }
+
+  /// Calculate total required amount for the month
+  double _calculateTotalRequired(Unit unit) {
+    double total = unit.baseRent;
+    
+    // Add fixed bills
+    unit.fixedBills.forEach((key, value) {
+      total += value;
+    });
+    
+    // Add current month bills (water, electricity)
+    if (unit.currentMonthBills != null) {
+      unit.currentMonthBills!.forEach((key, value) {
+        total += value;
+      });
+    }
+    
+    return total;
+  }
+
+  /// Determine detailed payment status
+  String _determinePaymentStatus(double totalPaid, double baseRent, double totalRequired) {
+    if (totalPaid >= totalRequired) {
+      return 'complete';
+    } else if (totalPaid >= baseRent) {
+      return 'rent_only'; // Paid rent but missing bills
+    } else if (totalPaid > 0) {
+      return 'partial_rent'; // Paid less than rent
+    } else {
+      return 'not_paid';
     }
   }
 
@@ -125,7 +174,6 @@ class PaymentTrackingService {
   ) async {
     try {
       final startOfMonth = Timestamp.fromDate(month);
-      final endOfMonth = Timestamp.fromDate(DateTime(month.year, month.month + 1, 0, 23, 59, 59));
 
       final snapshot = await _firestore
           .collection('rentals')
@@ -143,7 +191,7 @@ class PaymentTrackingService {
 
   /// Calculate how the payment amount should be distributed across breakdown items
   Map<String, double> _calculatePaymentBreakdown(
-    PaymentStructure structure,
+    Unit unit,
     double paymentAmount,
     List<Map<String, dynamic>> existingPayments,
   ) {
@@ -158,21 +206,38 @@ class PaymentTrackingService {
       });
     }
 
+    // Build complete breakdown structure
+    Map<String, double> requiredAmounts = {
+      'rent': unit.baseRent,
+    };
+    
+    // Add fixed bills
+    unit.fixedBills.forEach((key, value) {
+      requiredAmounts[key] = value;
+    });
+    
+    // Add current month bills
+    if (unit.currentMonthBills != null) {
+      unit.currentMonthBills!.forEach((key, value) {
+        requiredAmounts[key] = value;
+      });
+    }
+
     // Distribute the new payment amount
     double remainingAmount = paymentAmount;
     
-    // Priority order: rent, water, bin, electricity, others
-    List<String> priorityOrder = ['rent', 'water', 'bin', 'electricity'];
-    List<String> otherCategories = structure.breakdown.keys
+    // Priority order: rent, water, dustbin, electricity, others
+    List<String> priorityOrder = ['rent', 'water', 'dustbin', 'electricity'];
+    List<String> otherCategories = requiredAmounts.keys
         .where((key) => !priorityOrder.contains(key))
         .toList();
     
     List<String> allCategories = [...priorityOrder, ...otherCategories];
     
     for (String category in allCategories) {
-      if (!structure.breakdown.containsKey(category)) continue;
+      if (!requiredAmounts.containsKey(category)) continue;
       
-      double required = structure.breakdown[category]!;
+      double required = requiredAmounts[category]!;
       double paid = alreadyPaid[category] ?? 0;
       double needed = required - paid;
       
@@ -189,65 +254,71 @@ class PaymentTrackingService {
   /// Update unit's payment status
   Future<void> _updateUnitPaymentStatus(
     String buildingId,
-    String unitRef,
+    String unitId,
     double totalPaid,
     double requiredAmount,
     DateTime paymentDate,
+    String status,
+    double creditBalance,
   ) async {
     try {
-      // Find the unit document
-      final unitsSnapshot = await _firestore
+      await _firestore
           .collection('rentals')
           .doc(buildingId)
           .collection('units')
-          .where('unitNumber', isEqualTo: unitRef)
-          .limit(1)
-          .get();
-
-      if (unitsSnapshot.docs.isNotEmpty) {
-        final unitDoc = unitsSnapshot.docs.first;
-        await unitDoc.reference.update({
-          'lastPaymentAmount': totalPaid,
-          'lastPaymentDate': Timestamp.fromDate(paymentDate),
-          'paymentStatus': totalPaid >= requiredAmount ? 'complete' : 'partial',
-          'remainingAmount': requiredAmount - totalPaid,
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
-      }
+          .doc(unitId)
+          .update({
+        'totalPaid': totalPaid,
+        'totalRequired': requiredAmount,
+        'lastPaymentAmount': totalPaid,
+        'lastPaymentDate': Timestamp.fromDate(paymentDate),
+        'paymentStatus': status,
+        'remainingAmount': requiredAmount - totalPaid,
+        'creditBalance': creditBalance,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
     } catch (e) {
       print('Error updating unit payment status: $e');
     }
   }
 
-  /// Calculate and apply penalties
+  /// Calculate and apply penalties (2-tier system)
   Future<void> _calculatePenalties(
     String buildingId,
     String unitRef,
-    PaymentStructure structure,
+    Unit unit,
     DateTime paymentDate,
+    double totalPaid,
   ) async {
     try {
-      final currentMonth = DateTime(paymentDate.year, paymentDate.month);
-      final dueDate = DateTime(currentMonth.year, currentMonth.month, structure.dueDate);
+      // Get building settings for due date and penalties
+      final buildingDoc = await _firestore.collection('rentals').doc(buildingId).get();
+      final buildingData = buildingDoc.data();
+      final paymentSettings = buildingData?['paymentSettings'] as Map<String, dynamic>?;
       
-      if (paymentDate.isAfter(dueDate)) {
+      final dueDate = paymentSettings?['dueDate'] ?? 5;
+      final lateRentFixed = (paymentSettings?['penalties']?['lateRent']?['fixed'] ?? 200).toDouble();
+      final lateRentPerDay = (paymentSettings?['penalties']?['lateRent']?['perDay'] ?? 50).toDouble();
+      final partialPaymentPerDay = (paymentSettings?['penalties']?['partialPayment']?['perDay'] ?? 50).toDouble();
+      
+      final currentMonth = DateTime(paymentDate.year, paymentDate.month);
+      final dueDateThisMonth = DateTime(currentMonth.year, currentMonth.month, dueDate);
+      
+      if (paymentDate.isAfter(dueDateThisMonth)) {
         // Calculate days late
-        int daysLate = paymentDate.difference(dueDate).inDays;
-        
-        // Get existing payments to determine penalty type
-        final existingPayments = await _getMonthlyPayments(buildingId, unitRef, currentMonth);
-        double totalPaid = existingPayments.fold(0.0, (sum, payment) => sum + payment['amount']);
+        int daysLate = paymentDate.difference(dueDateThisMonth).inDays;
         
         double penaltyAmount = 0;
         String penaltyType = '';
         
-        if (totalPaid == 0) {
-          // No payment at all - late rent penalty
-          penaltyAmount = (structure.penalties['lateRentPerDay'] ?? 0) * daysLate;
+        // 2-TIER PENALTY SYSTEM
+        if (totalPaid < unit.baseRent) {
+          // Didn't pay full rent - HARSH penalty
+          penaltyAmount = lateRentFixed + (lateRentPerDay * daysLate);
           penaltyType = 'lateRent';
-        } else if (totalPaid < structure.totalRent) {
-          // Partial payment - partial payment penalty
-          penaltyAmount = (structure.penalties['partialPaymentPerDay'] ?? 0) * daysLate;
+        } else {
+          // Paid rent but missing bills - LENIENT penalty
+          penaltyAmount = partialPaymentPerDay * daysLate;
           penaltyType = 'partialPayment';
         }
         
@@ -263,6 +334,8 @@ class PaymentTrackingService {
             'penaltyType': penaltyType,
             'daysLate': daysLate,
             'penaltyAmount': penaltyAmount,
+            'totalPaid': totalPaid,
+            'baseRent': unit.baseRent,
             'calculatedDate': FieldValue.serverTimestamp(),
             'status': 'active',
           });
@@ -300,8 +373,8 @@ class PaymentTrackingService {
     DateTime month,
   ) async {
     try {
-      final paymentStructure = await _getPaymentStructure(buildingId, unitRef);
-      if (paymentStructure == null) {
+      final unit = await _getUnit(buildingId, unitRef);
+      if (unit == null) {
         return PaymentSummary(
           unitRef: unitRef,
           month: month,
@@ -314,23 +387,37 @@ class PaymentTrackingService {
         );
       }
 
+      final totalRequired = _calculateTotalRequired(unit);
       final payments = await _getMonthlyPayments(buildingId, unitRef, month);
       final penalties = await _getMonthlyPenalties(buildingId, unitRef, month);
       
-      double totalPaid = payments.fold(0.0, (sum, payment) => sum + payment['amount']);
-      double remainingAmount = paymentStructure.totalRent - totalPaid;
+      double totalPaid = payments.fold(0.0, (total, payment) => total + (payment['amount'] as num).toDouble());
+      double remainingAmount = totalRequired - totalPaid;
       bool isComplete = remainingAmount <= 0;
+
+      // Build breakdown
+      Map<String, double> breakdown = {
+        'rent': unit.baseRent,
+      };
+      unit.fixedBills.forEach((key, value) {
+        breakdown[key] = value;
+      });
+      if (unit.currentMonthBills != null) {
+        unit.currentMonthBills!.forEach((key, value) {
+          breakdown[key] = value;
+        });
+      }
 
       return PaymentSummary(
         unitRef: unitRef,
         month: month,
-        requiredAmount: paymentStructure.totalRent,
+        requiredAmount: totalRequired,
         totalPaid: totalPaid,
         remainingAmount: remainingAmount > 0 ? remainingAmount : 0,
         isComplete: isComplete,
         payments: payments,
         penalties: penalties,
-        breakdown: paymentStructure.breakdown,
+        breakdown: breakdown,
       );
     } catch (e) {
       return PaymentSummary(

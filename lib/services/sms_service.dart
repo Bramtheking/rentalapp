@@ -21,7 +21,7 @@ class SMSService {
       'senderName': 'FamilyBank',
       'displayName': 'Family Bank',
       'amount': r'KES\s*([\d,]+\.?\d*)',
-      'reference': r'#([a-z0-9]+)', // Unit reference like #mercvenusE4
+      'reference': r'#([a-zA-Z0-9]+)', // Unit reference like #mercvenusE4 (case-insensitive)
       'transactionCode': r'Ref:([A-Z0-9]+)', // M-PESA code like TK4H196IDN
       'date': r'on\s+(\d{2}-\d{2}-\d{4})',
       'referenceType': 'building_unit', // #mercvenusE4 format

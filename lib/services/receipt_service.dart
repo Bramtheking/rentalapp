@@ -46,6 +46,7 @@ class ReceiptService {
       String receiptNo = _generateReceiptNumber();
 
       // Create receipt data
+      DateTime now = DateTime.now();
       Map<String, dynamic> receiptData = {
         'receiptNo': receiptNo,
         'date': paymentDate.toIso8601String(),
@@ -65,7 +66,8 @@ class ReceiptService {
           'reference': reference,
           'breakdown': breakdown ?? {'Rent': amount},
         },
-        'generatedAt': DateTime.now().toIso8601String(),
+        'generatedAt': Timestamp.fromDate(now),
+        'createdAt': Timestamp.fromDate(now),
       };
 
       // Save receipt to Firestore
@@ -100,7 +102,19 @@ class ReceiptService {
     
     // Receipt details
     receipt.writeln('Receipt No: ${receiptData['receiptNo']}');
-    receipt.writeln('Date: ${_formatDate(DateTime.parse(receiptData['date']))}');
+    
+    // Handle date parsing (could be String or Timestamp)
+    DateTime paymentDate;
+    try {
+      if (receiptData['date'] is Timestamp) {
+        paymentDate = (receiptData['date'] as Timestamp).toDate();
+      } else {
+        paymentDate = DateTime.parse(receiptData['date']);
+      }
+    } catch (e) {
+      paymentDate = DateTime.now();
+    }
+    receipt.writeln('Date: ${_formatDate(paymentDate)}');
     receipt.writeln();
     
     // Building information
@@ -145,7 +159,19 @@ class ReceiptService {
     
     receipt.writeln('Thank you for your payment!');
     receipt.writeln();
-    receipt.writeln('Generated on: ${_formatDate(DateTime.parse(receiptData['generatedAt']))}');
+    
+    // Handle generatedAt parsing (could be String or Timestamp)
+    DateTime generatedDate;
+    try {
+      if (receiptData['generatedAt'] is Timestamp) {
+        generatedDate = (receiptData['generatedAt'] as Timestamp).toDate();
+      } else {
+        generatedDate = DateTime.parse(receiptData['generatedAt']);
+      }
+    } catch (e) {
+      generatedDate = DateTime.now();
+    }
+    receipt.writeln('Generated on: ${_formatDate(generatedDate)}');
     receipt.writeln('═══════════════════════════════════════');
     
     return receipt.toString();
