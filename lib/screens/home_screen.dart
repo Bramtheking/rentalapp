@@ -741,43 +741,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ),
-      floatingActionButton: _selectedIndex == 0 && _selectedBuildingId != null
-          ? Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20),
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Color(0xFF667eea),
-                    Color(0xFF764ba2),
-                  ],
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF667eea).withOpacity(0.4),
-                    blurRadius: 20,
-                    offset: const Offset(0, 8),
-                  ),
-                  BoxShadow(
-                    color: Colors.white.withOpacity(0.1),
-                    blurRadius: 10,
-                    offset: const Offset(-2, -2),
-                  ),
-                ],
-              ),
-              child: FloatingActionButton(
-                onPressed: () => _showQuickActions(context),
-                backgroundColor: Colors.transparent,
-                elevation: 0,
-                child: const Icon(
-                  Icons.add_rounded, 
-                  color: Colors.white,
-                  size: 28,
-                ),
-              ),
-            )
-          : null,
     );
   }
 
@@ -2136,6 +2099,80 @@ class _DashboardPageState extends State<DashboardPage> {
             ),
           ],
         ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: _buildQuickActionCard(
+                icon: Icons.payment_rounded,
+                title: 'Payment Structure',
+                onTap: () {
+                  if (widget.selectedBuildingId != null) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => PaymentStructureScreen(
+                          buildingId: widget.selectedBuildingId!,
+                          buildingName: widget.selectedBuildingName,
+                        ),
+                      ),
+                    );
+                  }
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildQuickActionCard(
+                icon: Icons.sync_rounded,
+                title: 'Sync Settings',
+                onTap: () {
+                  _showSyncSettingsDialog();
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildQuickActionCard(
+                icon: Icons.approval_rounded,
+                title: 'Unit Approval',
+                onTap: () {
+                  if (widget.selectedBuildingId != null) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => UnitApprovalScreen(
+                          buildingId: widget.selectedBuildingId!,
+                          buildingName: widget.selectedBuildingName,
+                        ),
+                      ),
+                    );
+                  }
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildQuickActionCard(
+                icon: Icons.calculate_rounded,
+                title: 'Penalty Calculator',
+                onTap: () {
+                  if (widget.selectedBuildingId != null) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => PenaltyCalculatorScreen(
+                          buildingId: widget.selectedBuildingId!,
+                          buildingName: widget.selectedBuildingName,
+                        ),
+                      ),
+                    );
+                  }
+                },
+              ),
+            ),
+          ],
+        ),
       ],
     );
   }
@@ -2149,6 +2186,50 @@ class _DashboardPageState extends State<DashboardPage> {
           style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: _buildQuickActionCard(
+                icon: Icons.people,
+                title: 'Manage Tenants',
+                onTap: () {
+                  // Navigate to tenants screen
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildQuickActionCard(
+                icon: Icons.home_work,
+                title: 'Manage Units',
+                onTap: () {
+                  // Navigate to units screen
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildQuickActionCard(
+                icon: Icons.payment,
+                title: 'Record Payment',
+                onTap: () {
+                  // Navigate to payments screen
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildQuickActionCard(
+                icon: Icons.receipt,
+                title: 'Add Expense',
+                onTap: () {
+                  // Navigate to expenses screen
+                },
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
         Row(
           children: [
             Expanded(
