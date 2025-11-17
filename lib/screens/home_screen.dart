@@ -1731,40 +1731,25 @@ class _DashboardPageState extends State<DashboardPage> {
                       final data = doc.data() as Map<String, dynamic>;
                       return DropdownMenuItem<String>(
                         value: doc.id,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-                          constraints: const BoxConstraints(maxHeight: 60),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
+                        child: Row(
+                          children: [
+                            Icon(Icons.business, size: 16, color: Colors.grey[600]),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
                                 data['name'] ?? 'Unnamed Building',
-                                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                                style: const TextStyle(fontSize: 14),
                                 overflow: TextOverflow.ellipsis,
-                                maxLines: 1,
                               ),
-                              if (data['address'] != null && data['address'].toString().isNotEmpty)
-                                Flexible(
-                                  child: Text(
-                                    data['address'],
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.grey[600],
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                    maxLines: 1,
-                                  ),
-                                ),
-                              Text(
-                                '${data['totalUnits'] ?? 0} units',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: Colors.grey[500],
-                                ),
+                            ),
+                            Text(
+                              '${data['totalUnits'] ?? 0} units',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[500],
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
                       );
                     }),
