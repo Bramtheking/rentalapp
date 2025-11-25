@@ -316,6 +316,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _startAutoSync() {
+    // Perform initial sync when app opens
+    Future.delayed(const Duration(seconds: 2), () {
+      _performAutoSync();
+    });
+    
     // Start auto-sync timer for every 2 minutes
     _autoSyncTimer = Timer.periodic(const Duration(minutes: 2), (timer) {
       _performAutoSync();

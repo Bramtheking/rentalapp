@@ -3,7 +3,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import '../services/auth_service.dart';
 import '../services/sms_service.dart';
-import '../models/tenant_model.dart';
 
 class SMSScreen extends StatefulWidget {
   const SMSScreen({super.key});
@@ -99,6 +98,25 @@ class _SMSScreenState extends State<SMSScreen> with TickerProviderStateMixin {
 
   Future<void> _loadSMSData() async {
     try {
+      // Auto-sync SMS messages from device when screen loads
+      if (selectedRentalId != null) {
+        try {
+          await _smsService.syncSMSMessages(selectedRentalId!);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('SMS messages synced successfully'),
+                duration: Duration(seconds: 2),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+        } catch (e) {
+          print('SMS sync error (may not be on mobile): $e');
+          // Don't show error to user as this is expected on non-mobile platforms
+        }
+      }
+      
       // Get SMS balance
       Map<String, dynamic> balanceResult = await _smsService.getSMSBalance();
       
@@ -134,6 +152,39 @@ class _SMSScreenState extends State<SMSScreen> with TickerProviderStateMixin {
       appBar: AppBar(
         title: const Text('SMS Communications'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.sync),
+            tooltip: 'Sync SMS from device',
+            onPressed: () async {
+              try {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Syncing SMS messages...'),
+                    duration: Duration(seconds: 1),
+                  ),
+                );
+                await _smsService.syncSMSMessages(selectedRentalId!);
+                await _loadSMSData();
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('SMS synced successfully!'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Sync failed: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+            },
+          ),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             margin: const EdgeInsets.only(right: 16),
@@ -141,11 +192,11 @@ class _SMSScreenState extends State<SMSScreen> with TickerProviderStateMixin {
               color: Colors.green.withOpacity(0.2),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Row(
+            child: const Row(
               children: [
-                const Icon(Icons.phone_android, color: Colors.green, size: 16),
-                const SizedBox(width: 4),
-                const Text(
+                Icon(Icons.phone_android, color: Colors.green, size: 16),
+                SizedBox(width: 4),
+                Text(
                   'FREE SMS',
                   style: TextStyle(
                     color: Colors.green,
