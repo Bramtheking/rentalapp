@@ -448,26 +448,32 @@ class _AddEditTenantScreenState extends State<AddEditTenantScreen> {
       if (widget.tenant != null) {
         // Update existing tenant
         await _tenantService.updateTenant(widget.rentalId, tenant);
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Tenant updated successfully')),
         );
       } else {
         // Add new tenant
         await _tenantService.addTenant(widget.rentalId, tenant);
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Tenant added successfully')),
         );
       }
 
-      Navigator.pop(context);
+      if (!mounted) return;
+      Navigator.pop(context, true); // Return true to indicate success
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: $e')),
       );
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 }

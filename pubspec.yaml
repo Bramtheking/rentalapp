@@ -49,6 +49,13 @@ dependencies:
   # CSV export
   csv: ^6.0.0
   
+  # Excel export
+  excel: ^4.0.6
+  
+  # PDF export
+  pdf: ^3.11.1
+  printing: ^5.13.4
+  
   # SMS reading and permissions
   permission_handler: ^11.0.1
   flutter_sms_inbox: ^1.0.2

@@ -336,8 +336,8 @@ class _HomeScreenState extends State<HomeScreen> {
       // Check if building has SMS sender configured
       final SMSService smsService = SMSService();
       
-      // Skip auto-sync if platform doesn't support it
-      if (!smsService.canSync()) return;
+      // Skip auto-sync if platform doesn't support it (web platform)
+      if (smsService.isWeb) return;
       
       String? smsSender = await smsService.getBuildingSMSSender(_selectedBuildingId!);
       
@@ -3357,14 +3357,14 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
                   ),
                   child: const Row(
                     children: [
-                      Expanded(flex: 2, child: Text('Reference', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                      Expanded(flex: 2, child: Text('Tenant', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                      Expanded(flex: 1, child: Text('Unit', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                      Expanded(flex: 2, child: Text('Amount', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                      Expanded(flex: 2, child: Text('Date', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                      Expanded(flex: 2, child: Text('Method', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                      Expanded(flex: 1, child: Text('Status', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                      SizedBox(width: 60, child: Text('Actions', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+                      Expanded(flex: 3, child: Text('Reference', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white))),
+                      Expanded(flex: 3, child: Text('Tenant', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white))),
+                      Expanded(flex: 2, child: Text('Unit', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white))),
+                      Expanded(flex: 2, child: Text('Amount', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white))),
+                      Expanded(flex: 2, child: Text('Date', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white))),
+                      Expanded(flex: 2, child: Text('Method', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white))),
+                      Expanded(flex: 2, child: Text('Status', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white))),
+                      SizedBox(width: 80, child: Text('Actions', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white))),
                     ],
                   ),
                 ),
@@ -3422,7 +3422,7 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
                             child: Row(
                               children: [
                                 Expanded(
-                                  flex: 2,
+                                  flex: 3,
                                   child: Text(
                                     reference,
                                     style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
@@ -3430,7 +3430,7 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
                                   ),
                                 ),
                                 Expanded(
-                                  flex: 2,
+                                  flex: 3,
                                   child: FutureBuilder<String>(
                                     future: _getTenantNameForUnit(unitRef),
                                     builder: (context, snapshot) {
@@ -3443,7 +3443,7 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
                                   ),
                                 ),
                                 Expanded(
-                                  flex: 1,
+                                  flex: 2,
                                   child: Text(
                                     unitRef,
                                     style: const TextStyle(fontSize: 13),
@@ -3472,9 +3472,9 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
                                   ),
                                 ),
                                 Expanded(
-                                  flex: 1,
+                                  flex: 2,
                                   child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                     decoration: BoxDecoration(
                                       color: status == 'complete' ? Colors.green : Colors.orange,
                                       borderRadius: BorderRadius.circular(12),
@@ -3487,7 +3487,7 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
                                   ),
                                 ),
                                 SizedBox(
-                                  width: 60,
+                                  width: 80,
                                   child: PopupMenuButton<String>(
                                     onSelected: (value) => _handlePaymentAction(payment.id, value, data),
                                     itemBuilder: (context) => [

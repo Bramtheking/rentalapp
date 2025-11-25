@@ -539,6 +539,18 @@ class _TenantsScreenState extends State<TenantsScreen> {
   }
 
   void _navigateToAddTenant() {
+    // Check if user is editor - editors cannot add tenants
+    final userType = currentUser?['userType'] ?? '';
+    if (userType == 'editor') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Editors cannot add tenants. Please contact your manager.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -550,6 +562,18 @@ class _TenantsScreenState extends State<TenantsScreen> {
   }
 
   void _navigateToEditTenant(Tenant tenant) {
+    // Check if user is editor - editors cannot edit tenants
+    final userType = currentUser?['userType'] ?? '';
+    if (userType == 'editor') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Editors cannot edit tenants. Please contact your manager.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -710,6 +734,18 @@ class _TenantsScreenState extends State<TenantsScreen> {
   }
 
   void _showDeleteDialog(Tenant tenant) {
+    // Check if user is editor - editors cannot delete tenants
+    final userType = currentUser?['userType'] ?? '';
+    if (userType == 'editor') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Editors cannot delete tenants. Please contact your manager.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    
     showDialog(
       context: context,
       builder: (context) => AlertDialog(

@@ -2,6 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:excel/excel.dart' as excel;
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+import 'package:path_provider/path_provider.dart';
+import 'dart:io';
 import '../models/unit_model.dart';
 import '../models/monthly_bills_model.dart';
 
@@ -187,6 +193,178 @@ class _MonthlyBillsScreenState extends State<MonthlyBillsScreen> {
     return '${months[date.month - 1]} ${date.year}';
   }
 
+  Future<void> _exportToExcel() async {
+    try {
+      var excelFile = excel.Excel.createExcel();
+      excel.Sheet sheetObject = excelFile['Monthly Bills'];
+      
+      // Add header
+      sheetObject.appendRow([
+        excel.TextCellValue('Unit'),
+        excel.TextCellValue('Tenant'),
+        excel.TextCellValue('Water (KES)'),
+        excel.TextCellValue('Electricity (KES)'),
+        excel.TextCellValue('Dustbin (KES)'),
+        excel.TextCellValue('Total Bills (KES)'),
+      ]);
+      
+      // Add data rows
+      for (var unit in _units) {
+        final waterText = _waterControllers[unit.unitNumber]?.text.trim() ?? '';
+        final electricityText = _electricityControllers[unit.unitNumber]?.text.trim() ?? '';
+        final water = waterText.isEmpty ? 0.0 : double.parse(waterText);
+        final electricity = electricityText.isEmpty ? 0.0 : double.parse(electricityText);
+        final dustbin = unit.fixedBills['dustbin'] ?? 0;
+        final total = water + electricity + dustbin;
+        
+        sheetObject.appendRow([
+          excel.TextCellValue(unit.unitNumber),
+          excel.TextCellValue(unit.tenantName ?? 'Vacant'),
+          excel.DoubleCellValue(water),
+          excel.DoubleCellValue(electricity),
+          excel.DoubleCellValue(dustbin),
+          excel.DoubleCellValue(total),
+        ]);
+      }
+      
+      // Save file
+      final directory = await getApplicationDocumentsDirectory();
+      final fileName = 'Monthly_Bills_${_getMonthName(_selectedMonth).replaceAll(' ', '_')}.xlsx';
+      final filePath = '${directory.path}/$fileName';
+      
+      File(filePath)
+        ..createSync(recursive: true)
+        ..writeAsBytesSync(excelFile.encode()!);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Excel exported to: $filePath'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error exporting to Excel: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _exportToPDF() async {
+    try {
+      final pdf = pw.Document();
+      
+      // Prepare data
+      List<List<String>> tableData = [];
+      tableData.add(['Unit', 'Tenant', 'Water', 'Electricity', 'Dustbin', 'Total']);
+      
+      for (var unit in _units) {
+        final waterText = _waterControllers[unit.unitNumber]?.text.trim() ?? '';
+        final electricityText = _electricityControllers[unit.unitNumber]?.text.trim() ?? '';
+        final water = waterText.isEmpty ? 0.0 : double.parse(waterText);
+        final electricity = electricityText.isEmpty ? 0.0 : double.parse(electricityText);
+        final dustbin = unit.fixedBills['dustbin'] ?? 0;
+        final total = water + electricity + dustbin;
+        
+        tableData.add([
+          unit.unitNumber,
+          unit.tenantName ?? 'Vacant',
+          water.toStringAsFixed(0),
+          electricity.toStringAsFixed(0),
+          dustbin.toStringAsFixed(0),
+          total.toStringAsFixed(0),
+        ]);
+      }
+      
+      pdf.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat.a4,
+          build: (pw.Context context) {
+            return pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text(
+                  'Monthly Bills Report',
+                  style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold),
+                ),
+                pw.SizedBox(height: 10),
+                pw.Text(
+                  _getMonthName(_selectedMonth),
+                  style: pw.TextStyle(fontSize: 18),
+                ),
+                pw.SizedBox(height: 20),
+                pw.Table.fromTextArray(
+                  data: tableData,
+                  headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                  cellAlignment: pw.Alignment.centerLeft,
+                ),
+              ],
+            );
+          },
+        ),
+      );
+      
+      // Save or share PDF
+      await Printing.layoutPdf(
+        onLayout: (PdfPageFormat format) async => pdf.save(),
+      );
+      
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error exporting to PDF: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _showExportOptions() {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Export Bills',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 20),
+            ListTile(
+              leading: const Icon(Icons.table_chart, color: Colors.green),
+              title: const Text('Export to Excel'),
+              subtitle: const Text('Download as .xlsx file'),
+              onTap: () {
+                Navigator.pop(context);
+                _exportToExcel();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.picture_as_pdf, color: Colors.red),
+              title: const Text('Export to PDF'),
+              subtitle: const Text('Generate PDF document'),
+              onTap: () {
+                Navigator.pop(context);
+                _exportToPDF();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -195,6 +373,11 @@ class _MonthlyBillsScreenState extends State<MonthlyBillsScreen> {
         backgroundColor: const Color(0xFF667eea),
         foregroundColor: Colors.white,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.download),
+            onPressed: _showExportOptions,
+            tooltip: 'Export Bills',
+          ),
           if (_isSaving)
             const Padding(
               padding: EdgeInsets.all(16),

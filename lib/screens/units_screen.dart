@@ -1049,6 +1049,18 @@ class _UnitsScreenState extends State<UnitsScreen> with TickerProviderStateMixin
 
   // Navigation and action methods
   void _navigateToAddUnit() {
+    // Check if user is editor - editors cannot add units
+    final userType = currentUser?['userType'] ?? '';
+    if (userType == 'editor') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Editors cannot add units. Please contact your manager.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -1071,6 +1083,18 @@ class _UnitsScreenState extends State<UnitsScreen> with TickerProviderStateMixin
   }
 
   void _navigateToEditUnit(Unit unit) {
+    // Check if user is editor - editors can only edit bills, not unit details
+    final userType = currentUser?['userType'] ?? '';
+    if (userType == 'editor') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Editors can only edit monthly bills. Use "Enter Monthly Bills" button.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -1095,6 +1119,8 @@ class _UnitsScreenState extends State<UnitsScreen> with TickerProviderStateMixin
   }
 
   void _handleUnitAction(String action, Unit unit) {
+    final userType = currentUser?['userType'] ?? '';
+    
     switch (action) {
       case 'edit':
         _navigateToEditUnit(unit);
@@ -1103,6 +1129,16 @@ class _UnitsScreenState extends State<UnitsScreen> with TickerProviderStateMixin
         _showUnitDetails(unit);
         break;
       case 'delete':
+        // Editors cannot delete units
+        if (userType == 'editor') {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Editors cannot delete units. Please contact your manager.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+          return;
+        }
         _showDeleteUnitDialog(unit);
         break;
     }
