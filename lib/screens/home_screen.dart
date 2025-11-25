@@ -3000,15 +3000,30 @@ class _AddBuildingDialogState extends State<AddBuildingDialog> {
   final _nameController = TextEditingController();
   final _addressController = TextEditingController();
   final _descriptionController = TextEditingController();
-  final _totalUnitsController = TextEditingController();
   bool _isLoading = false;
+  
+  // Bank selection
+  String? _selectedBank;
+  List<Map<String, String>> _availableBanks = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAvailableBanks();
+  }
+  
+  void _loadAvailableBanks() {
+    final smsService = SMSService();
+    setState(() {
+      _availableBanks = smsService.getAvailableBanks();
+    });
+  }
 
   @override
   void dispose() {
     _nameController.dispose();
     _addressController.dispose();
     _descriptionController.dispose();
-    _totalUnitsController.dispose();
     super.dispose();
   }
 
@@ -3058,20 +3073,34 @@ class _AddBuildingDialogState extends State<AddBuildingDialog> {
                 },
               ),
               const SizedBox(height: 16),
-              TextFormField(
-                controller: _totalUnitsController,
-                decoration: const InputDecoration(
-                  labelText: 'Total Units *',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.home),
+              DropdownButtonFormField<String>(
+                value: _selectedBank,
+                decoration: InputDecoration(
+                  labelText: 'SMS Bank/Payment Source *',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  prefixIcon: const Icon(Icons.account_balance),
+                  helperText: 'Select bank for SMS payment tracking',
                 ),
-                keyboardType: TextInputType.number,
+                items: [
+                  const DropdownMenuItem<String>(
+                    value: null,
+                    child: Text('-- Select Bank --'),
+                  ),
+                  ..._availableBanks.map((bank) {
+                    return DropdownMenuItem<String>(
+                      value: bank['id'],
+                      child: Text('${bank['name']} (${bank['sender']})'),
+                    );
+                  }),
+                ],
+                onChanged: (value) {
+                  setState(() {
+                    _selectedBank = value;
+                  });
+                },
                 validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter total units';
-                  }
-                  if (int.tryParse(value) == null || int.parse(value) <= 0) {
-                    return 'Please enter a valid number of units';
+                  if (value == null) {
+                    return 'Please select a bank';
                   }
                   return null;
                 },
@@ -3132,10 +3161,11 @@ class _AddBuildingDialogState extends State<AddBuildingDialog> {
         DocumentReference buildingRef = await FirebaseFirestore.instance.collection('rentals').add({
           'name': _nameController.text.trim(),
           'address': _addressController.text.trim(),
-          'totalUnits': int.parse(_totalUnitsController.text.trim()),
+          'totalUnits': 0, // Will be updated dynamically as units are added
           'description': _descriptionController.text.trim().isEmpty 
               ? null 
               : _descriptionController.text.trim(),
+          'smsSender': _selectedBank, // Save selected bank for SMS tracking
           'createdAt': FieldValue.serverTimestamp(),
           'isActive': true,
           'createdBy': currentUser.uid,
@@ -3145,6 +3175,12 @@ class _AddBuildingDialogState extends State<AddBuildingDialog> {
         // Get the building ID
         String buildingId = buildingRef.id;
         String buildingName = _nameController.text.trim();
+        
+        // Set up SMS bank for this building
+        if (_selectedBank != null) {
+          final smsService = SMSService();
+          await smsService.assignBankToBuilding(buildingId, _selectedBank!);
+        }
 
         // Update user's buildings list
         DocumentReference userRef = FirebaseFirestore.instance.collection('users').doc(currentUser.uid);
@@ -6723,7 +6759,6 @@ class _EditBuildingDialogState extends State<EditBuildingDialog> {
   final _nameController = TextEditingController();
   final _addressController = TextEditingController();
   final _descriptionController = TextEditingController();
-  final _totalUnitsController = TextEditingController();
   bool _isLoading = false;
 
   @override
@@ -6744,7 +6779,6 @@ class _EditBuildingDialogState extends State<EditBuildingDialog> {
         _nameController.text = data['name'] ?? '';
         _addressController.text = data['address'] ?? '';
         _descriptionController.text = data['description'] ?? '';
-        _totalUnitsController.text = (data['totalUnits'] ?? 0).toString();
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -6788,20 +6822,6 @@ class _EditBuildingDialogState extends State<EditBuildingDialog> {
               ),
               const SizedBox(height: 16),
               TextFormField(
-                controller: _totalUnitsController,
-                decoration: const InputDecoration(
-                  labelText: 'Total Units *',
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: TextInputType.number,
-                validator: (value) {
-                  if (value?.isEmpty ?? true) return 'Please enter total units';
-                  if (int.tryParse(value!) == null || int.parse(value) <= 0) return 'Please enter valid number of units';
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
                 controller: _descriptionController,
                 decoration: const InputDecoration(
                   labelText: 'Description (Optional)',
@@ -6837,7 +6857,7 @@ class _EditBuildingDialogState extends State<EditBuildingDialog> {
         await FirebaseFirestore.instance.collection('rentals').doc(widget.buildingId).update({
           'name': _nameController.text.trim(),
           'address': _addressController.text.trim(),
-          'totalUnits': int.parse(_totalUnitsController.text.trim()),
+          // totalUnits is now dynamically calculated, not manually set
           'description': _descriptionController.text.trim().isEmpty ? null : _descriptionController.text.trim(),
           'updatedAt': FieldValue.serverTimestamp(),
         });

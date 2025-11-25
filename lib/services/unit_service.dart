@@ -45,6 +45,30 @@ class UnitService {
         .doc(rentalId)
         .collection('units')
         .add(unit.toFirestore());
+    
+    // Update totalUnits count in the building document
+    await _updateTotalUnitsCount(rentalId);
+  }
+  
+  // Update the totalUnits count in the building document
+  Future<void> _updateTotalUnitsCount(String rentalId) async {
+    try {
+      final unitsSnapshot = await _firestore
+          .collection('rentals')
+          .doc(rentalId)
+          .collection('units')
+          .get();
+      
+      await _firestore
+          .collection('rentals')
+          .doc(rentalId)
+          .update({
+        'totalUnits': unitsSnapshot.docs.length,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      print('Error updating totalUnits count: $e');
+    }
   }
 
   // Update unit
@@ -65,6 +89,9 @@ class UnitService {
         .collection('units')
         .doc(unitDocId)
         .delete();
+    
+    // Update totalUnits count in the building document
+    await _updateTotalUnitsCount(rentalId);
   }
 
   // Assign tenant to unit
