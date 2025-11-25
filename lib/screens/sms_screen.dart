@@ -471,6 +471,20 @@ class _SMSScreenState extends State<SMSScreen> with TickerProviderStateMixin {
                         },
                       ),
                       FilterChip(
+                        label: const Text('Paid Late'),
+                        selected: selectedPhones.contains('paid_late'),
+                        onSelected: (selected) {
+                          setState(() {
+                            if (selected) {
+                              selectedPhones.clear();
+                              selectedPhones.add('paid_late');
+                            } else {
+                              selectedPhones.remove('paid_late');
+                            }
+                          });
+                        },
+                      ),
+                      FilterChip(
                         label: const Text('Overdue 7+ Days'),
                         selected: selectedPhones.contains('overdue_7'),
                         onSelected: (selected) {

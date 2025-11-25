@@ -55,6 +55,12 @@ dependencies:
   
   # URL launcher for SMS intents (no build issues)
   url_launcher: ^6.2.2
+  
+  # File operations
+  path_provider: ^2.1.1
+  
+  # File saving
+  file_saver: ^0.2.9
 
 dev_dependencies:
   flutter_test:

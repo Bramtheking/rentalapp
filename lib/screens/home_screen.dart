@@ -5763,11 +5763,12 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
             : {'Rent Payment': (paymentData['amount'] ?? 0).toDouble()},
       );
 
-      await receiptService.copyReceiptToClipboard(receiptData);
+      // Download to file
+      String filePath = await receiptService.downloadReceiptToFile(receiptData);
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Receipt ${receiptData['receiptNo']} downloaded to clipboard!'),
+          content: Text('Receipt ${receiptData['receiptNo']} saved to Downloads folder!'),
           backgroundColor: Colors.green,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -5834,11 +5835,13 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
         allReceipts.writeln('─────────────────────────────────────');
       }
 
-      await Clipboard.setData(ClipboardData(text: allReceipts.toString()));
+      // Download to file
+      final receiptService = ReceiptService();
+      String filePath = await receiptService.downloadAllReceipts(widget.selectedBuildingId!);
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('${paymentsSnapshot.docs.length} receipts downloaded to clipboard!'),
+          content: Text('${paymentsSnapshot.docs.length} receipts saved to Downloads folder!'),
           backgroundColor: Colors.green,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),

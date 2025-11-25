@@ -1,5 +1,8 @@
+import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:file_saver/file_saver.dart';
 import '../models/tenant_model.dart';
 
 class ReceiptService {
@@ -207,6 +210,64 @@ class ReceiptService {
   Future<void> copyReceiptToClipboard(Map<String, dynamic> receiptData) async {
     String receiptText = generateReceiptText(receiptData);
     await Clipboard.setData(ClipboardData(text: receiptText));
+  }
+
+  // Download receipt to file
+  Future<String> downloadReceiptToFile(Map<String, dynamic> receiptData) async {
+    try {
+      String receiptText = generateReceiptText(receiptData);
+      String receiptNo = receiptData['receiptNo'] ?? 'receipt';
+      String fileName = 'Receipt_$receiptNo.txt';
+      
+      // Convert text to bytes
+      List<int> bytes = receiptText.codeUnits;
+      
+      // Save file using file_saver
+      String? filePath = await FileSaver.instance.saveFile(
+        name: fileName,
+        bytes: Uint8List.fromList(bytes),
+        ext: 'txt',
+        mimeType: MimeType.text,
+      );
+      
+      return filePath ?? 'File saved to Downloads';
+    } catch (e) {
+      throw Exception('Failed to download receipt: $e');
+    }
+  }
+
+  // Download all receipts to file
+  Future<String> downloadAllReceipts(String buildingId) async {
+    try {
+      final receipts = await getReceipts(buildingId, limit: 1000);
+      
+      StringBuffer allReceipts = StringBuffer();
+      allReceipts.writeln('═══════════════════════════════════════');
+      allReceipts.writeln('         ALL PAYMENT RECEIPTS');
+      allReceipts.writeln('═══════════════════════════════════════');
+      allReceipts.writeln();
+      
+      for (var receipt in receipts) {
+        allReceipts.writeln(generateReceiptText(receipt));
+        allReceipts.writeln();
+        allReceipts.writeln('─────────────────────────────────────');
+        allReceipts.writeln();
+      }
+      
+      String fileName = 'All_Receipts_${DateTime.now().millisecondsSinceEpoch}.txt';
+      List<int> bytes = allReceipts.toString().codeUnits;
+      
+      String? filePath = await FileSaver.instance.saveFile(
+        name: fileName,
+        bytes: Uint8List.fromList(bytes),
+        ext: 'txt',
+        mimeType: MimeType.text,
+      );
+      
+      return filePath ?? 'File saved to Downloads';
+    } catch (e) {
+      throw Exception('Failed to download receipts: $e');
+    }
   }
 
   // Get receipt by number

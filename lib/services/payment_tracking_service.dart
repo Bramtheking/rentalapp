@@ -282,7 +282,7 @@ class PaymentTrackingService {
     }
   }
 
-  /// Calculate and apply penalties (2-tier system)
+  /// Calculate and apply penalties (simple per-day system)
   Future<void> _calculatePenalties(
     String buildingId,
     String unitRef,
@@ -297,9 +297,7 @@ class PaymentTrackingService {
       final paymentSettings = buildingData?['paymentSettings'] as Map<String, dynamic>?;
       
       final dueDate = paymentSettings?['dueDate'] ?? 5;
-      final lateRentFixed = (paymentSettings?['penalties']?['lateRent']?['fixed'] ?? 200).toDouble();
-      final lateRentPerDay = (paymentSettings?['penalties']?['lateRent']?['perDay'] ?? 50).toDouble();
-      final partialPaymentPerDay = (paymentSettings?['penalties']?['partialPayment']?['perDay'] ?? 50).toDouble();
+      final perDayAmount = (paymentSettings?['penalties']?['perDayAmount'] ?? 50).toDouble();
       
       final currentMonth = DateTime(paymentDate.year, paymentDate.month);
       final dueDateThisMonth = DateTime(currentMonth.year, currentMonth.month, dueDate);
@@ -308,19 +306,8 @@ class PaymentTrackingService {
         // Calculate days late
         int daysLate = paymentDate.difference(dueDateThisMonth).inDays;
         
-        double penaltyAmount = 0;
-        String penaltyType = '';
-        
-        // 2-TIER PENALTY SYSTEM
-        if (totalPaid < unit.baseRent) {
-          // Didn't pay full rent - HARSH penalty
-          penaltyAmount = lateRentFixed + (lateRentPerDay * daysLate);
-          penaltyType = 'lateRent';
-        } else {
-          // Paid rent but missing bills - LENIENT penalty
-          penaltyAmount = partialPaymentPerDay * daysLate;
-          penaltyType = 'partialPayment';
-        }
+        // Simple per-day penalty
+        double penaltyAmount = perDayAmount * daysLate;
         
         if (penaltyAmount > 0) {
           // Save penalty record
@@ -331,7 +318,6 @@ class PaymentTrackingService {
               .add({
             'unitRef': unitRef,
             'month': Timestamp.fromDate(currentMonth),
-            'penaltyType': penaltyType,
             'daysLate': daysLate,
             'penaltyAmount': penaltyAmount,
             'totalPaid': totalPaid,
