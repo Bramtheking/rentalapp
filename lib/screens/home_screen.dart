@@ -72,6 +72,9 @@ class _HomeScreenState extends State<HomeScreen> {
       String? lastSelectedId = prefs.getString('selected_building_id');
       String? lastSelectedName = prefs.getString('selected_building_name');
       
+      // Clear any saved tab index to always start fresh
+      await prefs.remove('selected_tab_index');
+      
       setState(() {
         if (lastSelectedId != null && lastSelectedName != null) {
           _selectedBuildingId = lastSelectedId;
@@ -6676,6 +6679,7 @@ class _AddPaymentDialogState extends State<AddPaymentDialog> {
                 .add({
               'tenantName': _tenantController.text.trim(),
               'unit': _selectedUnit ?? '',
+              'unitRef': _selectedUnit ?? '',
               'amount': double.parse(_amountController.text.trim()),
               'date': _dateController.text,
               'method': _selectedMethod,
@@ -8202,6 +8206,7 @@ class _EditPaymentDialogState extends State<EditPaymentDialog> {
                 .update({
               'tenantName': _tenantController.text.trim(),
               'unit': _selectedUnit ?? '',
+              'unitRef': _selectedUnit ?? '',
               'amount': double.parse(_amountController.text.trim()),
               'date': _dateController.text,
               'method': _selectedMethod,
