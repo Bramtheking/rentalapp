@@ -78,8 +78,11 @@ class _HomeScreenState extends State<HomeScreen> {
           _selectedBuildingId = lastSelectedId;
           _selectedBuildingName = lastSelectedName;
         }
-        if (lastSelectedTab != null) {
+        // Only restore tab if it's valid, otherwise default to Dashboard (0)
+        if (lastSelectedTab != null && lastSelectedTab >= 0 && lastSelectedTab < 8) {
           _selectedIndex = lastSelectedTab;
+        } else {
+          _selectedIndex = 0; // Default to Dashboard
         }
       });
     } catch (e) {

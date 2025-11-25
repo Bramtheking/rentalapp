@@ -130,4 +130,28 @@ class TenantService {
             tenant.unitNumber.toLowerCase().contains(query.toLowerCase()))
         .toList();
   }
+
+  // Get available units (vacant or all units)
+  Future<List<Map<String, dynamic>>> getAvailableUnits(String rentalId) async {
+    try {
+      final snapshot = await _firestore
+          .collection('rentals')
+          .doc(rentalId)
+          .collection('units')
+          .get();
+      
+      return snapshot.docs.map((doc) {
+        final data = doc.data();
+        return {
+          'unitNumber': data['unitNumber'] ?? '',
+          'unitName': data['unitName'] ?? '',
+          'rent': data['rent'] ?? data['baseRent'] ?? 0.0,
+          'status': data['status'] ?? 'vacant',
+        };
+      }).toList();
+    } catch (e) {
+      print('Error getting available units: $e');
+      return [];
+    }
+  }
 }

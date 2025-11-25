@@ -24,7 +24,6 @@ class _AddEditTenantScreenState extends State<AddEditTenantScreen> {
   late TextEditingController _nameController;
   late TextEditingController _emailController;
   late TextEditingController _phoneController;
-  late TextEditingController _unitController;
   late TextEditingController _rentController;
   late TextEditingController _emergencyContactController;
   late TextEditingController _emergencyPhoneController;
@@ -34,11 +33,17 @@ class _AddEditTenantScreenState extends State<AddEditTenantScreen> {
   DateTime _moveInDate = DateTime.now();
   String _status = 'active';
   bool _isLoading = false;
+  
+  // Unit selection
+  String? _selectedUnitNumber;
+  List<Map<String, dynamic>> _availableUnits = [];
+  bool _loadingUnits = true;
 
   @override
   void initState() {
     super.initState();
     _initializeControllers();
+    _loadAvailableUnits();
   }
 
   void _initializeControllers() {
@@ -47,7 +52,7 @@ class _AddEditTenantScreenState extends State<AddEditTenantScreen> {
     _nameController = TextEditingController(text: tenant?.name ?? '');
     _emailController = TextEditingController(text: tenant?.email ?? '');
     _phoneController = TextEditingController(text: tenant?.phone ?? '');
-    _unitController = TextEditingController(text: tenant?.unitNumber ?? '');
+    _selectedUnitNumber = tenant?.unitNumber;
     _rentController = TextEditingController(
       text: tenant?.rentAmount.toString() ?? '',
     );
@@ -67,13 +72,31 @@ class _AddEditTenantScreenState extends State<AddEditTenantScreen> {
       _status = tenant.status;
     }
   }
+  
+  Future<void> _loadAvailableUnits() async {
+    try {
+      final units = await _tenantService.getAvailableUnits(widget.rentalId);
+      setState(() {
+        _availableUnits = units;
+        _loadingUnits = false;
+      });
+    } catch (e) {
+      setState(() {
+        _loadingUnits = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading units: $e')),
+        );
+      }
+    }
+  }
 
   @override
   void dispose() {
     _nameController.dispose();
     _emailController.dispose();
     _phoneController.dispose();
-    _unitController.dispose();
     _rentController.dispose();
     _emergencyContactController.dispose();
     _emergencyPhoneController.dispose();
@@ -180,20 +203,41 @@ class _AddEditTenantScreenState extends State<AddEditTenantScreen> {
               Row(
                 children: [
                   Expanded(
-                    child: TextFormField(
-                      controller: _unitController,
-                      decoration: const InputDecoration(
-                        labelText: 'Unit Number *',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.home),
-                      ),
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return 'Unit number is required';
-                        }
-                        return null;
-                      },
-                    ),
+                    child: _loadingUnits
+                        ? const Center(child: CircularProgressIndicator())
+                        : DropdownButtonFormField<String>(
+                            value: _selectedUnitNumber,
+                            decoration: const InputDecoration(
+                              labelText: 'Select Unit *',
+                              border: OutlineInputBorder(),
+                              prefixIcon: Icon(Icons.home),
+                            ),
+                            items: _availableUnits.map((unit) {
+                              return DropdownMenuItem<String>(
+                                value: unit['unitNumber'],
+                                child: Text('${unit['unitNumber']} - ${unit['unitName']}'),
+                              );
+                            }).toList(),
+                            onChanged: (value) {
+                              setState(() {
+                                _selectedUnitNumber = value;
+                                // Auto-fill rent amount from selected unit
+                                final selectedUnit = _availableUnits.firstWhere(
+                                  (u) => u['unitNumber'] == value,
+                                  orElse: () => {},
+                                );
+                                if (selectedUnit.isNotEmpty && selectedUnit['rent'] != null) {
+                                  _rentController.text = selectedUnit['rent'].toString();
+                                }
+                              });
+                            },
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Please select a unit';
+                              }
+                              return null;
+                            },
+                          ),
                   ),
                   const SizedBox(width: 16),
                   Expanded(
@@ -380,7 +424,7 @@ class _AddEditTenantScreenState extends State<AddEditTenantScreen> {
         name: _nameController.text.trim(),
         email: _emailController.text.trim(),
         phone: _phoneController.text.trim(),
-        unitNumber: _unitController.text.trim(),
+        unitNumber: _selectedUnitNumber ?? '',
         rentAmount: double.parse(_rentController.text),
         moveInDate: _moveInDate,
         moveOutDate: widget.tenant?.moveOutDate,

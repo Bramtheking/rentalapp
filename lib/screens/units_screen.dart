@@ -352,15 +352,15 @@ class _UnitsScreenState extends State<UnitsScreen> with TickerProviderStateMixin
                               const SizedBox(width: 8),
                               ElevatedButton.icon(
                                 onPressed: () => _navigateToAddUnit(),
-                                icon: const Icon(Icons.add_rounded, size: 16),
-                                label: const Text('Add Unit'),
+                                icon: const Icon(Icons.add_rounded, size: 18),
+                                label: const Text('Add'),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: const Color(0xFF667eea),
                                   foregroundColor: Colors.white,
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12),
                                   ),
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                                 ),
                               ),
                             ],
