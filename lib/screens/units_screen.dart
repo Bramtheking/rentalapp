@@ -297,73 +297,69 @@ class _UnitsScreenState extends State<UnitsScreen> with TickerProviderStateMixin
                   padding: const EdgeInsets.all(24),
                   child: Column(
                     children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      const Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Units List',
-                                style: TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF2D3748),
-                                ),
-                              ),
-                              Text(
-                                'Manage all rental units',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.grey,
-                                ),
-                              ),
-                            ],
+                          Text(
+                            'Units List',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF2D3748),
+                            ),
                           ),
-    Row(
-                            children: [
-                              ElevatedButton.icon(
-                                onPressed: () => _showBuildingSettingsDialog(),
-                                icon: const Icon(Icons.settings_rounded, size: 16),
-                                label: const Text('Settings'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.grey[700],
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                                ),
+                          Text(
+                            'Manage all rental units',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          ElevatedButton.icon(
+                            onPressed: () => _showBuildingSettingsDialog(),
+                            icon: const Icon(Icons.settings_rounded, size: 16),
+                            label: const Text('Settings'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.grey[700],
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
                               ),
-                              const SizedBox(width: 8),
-                              ElevatedButton.icon(
-                                onPressed: () => _navigateToMonthlyBills(),
-                                icon: const Icon(Icons.receipt_long, size: 16),
-                                label: const Text('Bills'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.orange[700],
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                                ),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            ),
+                          ),
+                          ElevatedButton.icon(
+                            onPressed: () => _navigateToMonthlyBills(),
+                            icon: const Icon(Icons.receipt_long, size: 16),
+                            label: const Text('Bills'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.orange[700],
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
                               ),
-                              const SizedBox(width: 8),
-                              ElevatedButton.icon(
-                                onPressed: () => _navigateToAddUnit(),
-                                icon: const Icon(Icons.add_rounded, size: 18),
-                                label: const Text('Add'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF667eea),
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                ),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            ),
+                          ),
+                          ElevatedButton.icon(
+                            onPressed: () => _navigateToAddUnit(),
+                            icon: const Icon(Icons.add_rounded, size: 16),
+                            label: const Text('Add Unit'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF667eea),
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
                               ),
-                            ],
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            ),
                           ),
                         ],
                       ),

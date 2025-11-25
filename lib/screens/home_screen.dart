@@ -71,19 +71,14 @@ class _HomeScreenState extends State<HomeScreen> {
       SharedPreferences prefs = await SharedPreferences.getInstance();
       String? lastSelectedId = prefs.getString('selected_building_id');
       String? lastSelectedName = prefs.getString('selected_building_name');
-      int? lastSelectedTab = prefs.getInt('selected_tab_index');
       
       setState(() {
         if (lastSelectedId != null && lastSelectedName != null) {
           _selectedBuildingId = lastSelectedId;
           _selectedBuildingName = lastSelectedName;
         }
-        // Only restore tab if it's valid, otherwise default to Dashboard (0)
-        if (lastSelectedTab != null && lastSelectedTab >= 0 && lastSelectedTab < 8) {
-          _selectedIndex = lastSelectedTab;
-        } else {
-          _selectedIndex = 0; // Default to Dashboard
-        }
+        // Always start at Dashboard (0) when app opens
+        _selectedIndex = 0;
       });
     } catch (e) {
       print('Error restoring building selection from storage: $e');
@@ -3455,7 +3450,7 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
                                 SizedBox(
                                   width: 60,
                                   child: PopupMenuButton<String>(
-                                    onSelected: (value) => _handlePaymentAction(payment.id, value),
+                                    onSelected: (value) => _handlePaymentAction(payment.id, value, data),
                                     itemBuilder: (context) => [
                                       const PopupMenuItem(value: 'view', child: Text('View')),
                                       const PopupMenuItem(value: 'edit', child: Text('Edit')),
@@ -5924,18 +5919,58 @@ class _RentPaymentsPageState extends State<RentPaymentsPage> with TickerProvider
     );
   }
 
-  void _handlePaymentAction(String paymentId, String action) {
+  void _handlePaymentAction(String paymentId, String action, Map<String, dynamic> paymentData) {
     switch (action) {
       case 'view':
-        // TODO: Show payment details
+        _showPaymentDetails(paymentData);
         break;
       case 'edit':
-        // TODO: Edit payment
+        _showEditPaymentDialog(paymentId, paymentData);
         break;
       case 'delete':
         _showDeletePaymentConfirmation(paymentId);
         break;
     }
+  }
+  
+  void _showPaymentDetails(Map<String, dynamic> paymentData) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.receipt, color: Color(0xFF667eea)),
+            SizedBox(width: 8),
+            Text('Payment Details'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildDetailRow('Tenant', paymentData['tenantName'] ?? 'N/A'),
+            _buildDetailRow('Unit', paymentData['unit'] ?? 'N/A'),
+            _buildDetailRow('Amount', 'KES ${(paymentData['amount'] ?? 0).toStringAsFixed(2)}'),
+            _buildDetailRow('Date', paymentData['date'] ?? 'N/A'),
+            _buildDetailRow('Method', paymentData['method'] ?? 'N/A'),
+            _buildDetailRow('Status', paymentData['status'] ?? 'N/A'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  void _showEditPaymentDialog(String paymentId, Map<String, dynamic> paymentData) {
+    showDialog(
+      context: context,
+      builder: (context) => EditPaymentDialog(paymentId: paymentId, paymentData: paymentData),
+    );
   }
 
   void _showDeletePaymentConfirmation(String paymentId) {
@@ -6417,12 +6452,16 @@ class AddPaymentDialog extends StatefulWidget {
 class _AddPaymentDialogState extends State<AddPaymentDialog> {
   final _formKey = GlobalKey<FormState>();
   final _tenantController = TextEditingController();
-  final _unitController = TextEditingController();
   final _amountController = TextEditingController();
   final _dateController = TextEditingController();
   String _selectedMethod = 'M-Pesa';
   String _selectedStatus = 'Completed';
   bool _isLoading = false;
+  
+  // Unit selection
+  String? _selectedUnit;
+  List<Map<String, dynamic>> _availableUnits = [];
+  bool _loadingUnits = true;
 
   final List<String> _paymentMethods = ['M-Pesa', 'Bank Transfer', 'Cash', 'Cheque'];
   final List<String> _statusOptions = ['Completed', 'Pending', 'Failed'];
@@ -6431,12 +6470,47 @@ class _AddPaymentDialogState extends State<AddPaymentDialog> {
   void initState() {
     super.initState();
     _dateController.text = DateTime.now().toString().split(' ')[0];
+    _loadAvailableUnits();
+  }
+
+  Future<void> _loadAvailableUnits() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+        final userData = userDoc.data();
+        final rentalName = userData?['rental'] as String?;
+        
+        if (rentalName != null) {
+          final snapshot = await FirebaseFirestore.instance
+              .collection('rentals')
+              .doc(rentalName)
+              .collection('units')
+              .get();
+          
+          setState(() {
+            _availableUnits = snapshot.docs.map((doc) {
+              final data = doc.data();
+              return {
+                'unitNumber': data['unitNumber'] ?? '',
+                'unitName': data['unitName'] ?? '',
+                'tenantName': data['tenantName'] ?? 'No Tenant',
+              };
+            }).toList();
+            _loadingUnits = false;
+          });
+        }
+      }
+    } catch (e) {
+      setState(() {
+        _loadingUnits = false;
+      });
+    }
   }
 
   @override
   void dispose() {
     _tenantController.dispose();
-    _unitController.dispose();
     _amountController.dispose();
     _dateController.dispose();
     super.dispose();
@@ -6467,14 +6541,35 @@ class _AddPaymentDialogState extends State<AddPaymentDialog> {
                 validator: (value) => value?.isEmpty ?? true ? 'Please enter tenant name' : null,
               ),
               const SizedBox(height: 16),
-              TextFormField(
-                controller: _unitController,
-                decoration: const InputDecoration(
-                  labelText: 'Unit *',
-                  border: OutlineInputBorder(),
-                ),
-                validator: (value) => value?.isEmpty ?? true ? 'Please enter unit' : null,
-              ),
+              _loadingUnits
+                  ? const Center(child: CircularProgressIndicator())
+                  : DropdownButtonFormField<String>(
+                      value: _selectedUnit,
+                      decoration: const InputDecoration(
+                        labelText: 'Select Unit *',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: _availableUnits.map((unit) {
+                        return DropdownMenuItem<String>(
+                          value: unit['unitNumber'],
+                          child: Text('${unit['unitNumber']} - ${unit['unitName']} (${unit['tenantName']})'),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        setState(() {
+                          _selectedUnit = value;
+                          // Auto-fill tenant name
+                          final selectedUnitData = _availableUnits.firstWhere(
+                            (u) => u['unitNumber'] == value,
+                            orElse: () => {},
+                          );
+                          if (selectedUnitData.isNotEmpty) {
+                            _tenantController.text = selectedUnitData['tenantName'] ?? '';
+                          }
+                        });
+                      },
+                      validator: (value) => value == null ? 'Please select a unit' : null,
+                    ),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _amountController,
@@ -6580,7 +6675,7 @@ class _AddPaymentDialogState extends State<AddPaymentDialog> {
                 .collection('payments')
                 .add({
               'tenantName': _tenantController.text.trim(),
-              'unit': _unitController.text.trim(),
+              'unit': _selectedUnit ?? '',
               'amount': double.parse(_amountController.text.trim()),
               'date': _dateController.text,
               'method': _selectedMethod,
@@ -7855,6 +7950,268 @@ class _MoveOutDialogState extends State<MoveOutDialog> {
             Navigator.pop(context);
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Move out process initiated!'), backgroundColor: Colors.green),
+            );
+          }
+        }
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      } finally {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+}
+
+
+// Edit Payment Dialog
+class EditPaymentDialog extends StatefulWidget {
+  final String paymentId;
+  final Map<String, dynamic> paymentData;
+
+  const EditPaymentDialog({
+    super.key,
+    required this.paymentId,
+    required this.paymentData,
+  });
+
+  @override
+  State<EditPaymentDialog> createState() => _EditPaymentDialogState();
+}
+
+class _EditPaymentDialogState extends State<EditPaymentDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _tenantController = TextEditingController();
+  final _amountController = TextEditingController();
+  final _dateController = TextEditingController();
+  String _selectedMethod = 'M-Pesa';
+  String _selectedStatus = 'Completed';
+  bool _isLoading = false;
+  
+  String? _selectedUnit;
+  List<Map<String, dynamic>> _availableUnits = [];
+  bool _loadingUnits = true;
+
+  final List<String> _paymentMethods = ['M-Pesa', 'Bank Transfer', 'Cash', 'Cheque'];
+  final List<String> _statusOptions = ['Completed', 'Pending', 'Failed'];
+
+  @override
+  void initState() {
+    super.initState();
+    _tenantController.text = widget.paymentData['tenantName'] ?? '';
+    _selectedUnit = widget.paymentData['unit'];
+    _amountController.text = (widget.paymentData['amount'] ?? 0).toString();
+    _dateController.text = widget.paymentData['date'] ?? DateTime.now().toString().split(' ')[0];
+    _selectedMethod = widget.paymentData['method'] ?? 'M-Pesa';
+    _selectedStatus = widget.paymentData['status'] ?? 'Completed';
+    _loadAvailableUnits();
+  }
+
+  Future<void> _loadAvailableUnits() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+        final userData = userDoc.data();
+        final rentalName = userData?['rental'] as String?;
+        
+        if (rentalName != null) {
+          final snapshot = await FirebaseFirestore.instance
+              .collection('rentals')
+              .doc(rentalName)
+              .collection('units')
+              .get();
+          
+          setState(() {
+            _availableUnits = snapshot.docs.map((doc) {
+              final data = doc.data();
+              return {
+                'unitNumber': data['unitNumber'] ?? '',
+                'unitName': data['unitName'] ?? '',
+                'tenantName': data['tenantName'] ?? 'No Tenant',
+              };
+            }).toList();
+            _loadingUnits = false;
+          });
+        }
+      }
+    } catch (e) {
+      setState(() {
+        _loadingUnits = false;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _tenantController.dispose();
+    _amountController.dispose();
+    _dateController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Row(
+        children: [
+          Icon(Icons.edit, color: Color(0xFF667eea)),
+          SizedBox(width: 8),
+          Text('Edit Payment'),
+        ],
+      ),
+      content: Form(
+        key: _formKey,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: _tenantController,
+                decoration: const InputDecoration(
+                  labelText: 'Tenant Name *',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) => value?.isEmpty ?? true ? 'Please enter tenant name' : null,
+              ),
+              const SizedBox(height: 16),
+              _loadingUnits
+                  ? const Center(child: CircularProgressIndicator())
+                  : DropdownButtonFormField<String>(
+                      value: _selectedUnit,
+                      decoration: const InputDecoration(
+                        labelText: 'Select Unit *',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: _availableUnits.map((unit) {
+                        return DropdownMenuItem<String>(
+                          value: unit['unitNumber'],
+                          child: Text('${unit['unitNumber']} - ${unit['unitName']}'),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        setState(() {
+                          _selectedUnit = value;
+                        });
+                      },
+                      validator: (value) => value == null ? 'Please select a unit' : null,
+                    ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _amountController,
+                decoration: const InputDecoration(
+                  labelText: 'Amount (KES) *',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.number,
+                validator: (value) {
+                  if (value?.isEmpty ?? true) return 'Please enter amount';
+                  if (double.tryParse(value!) == null) return 'Please enter valid amount';
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _dateController,
+                decoration: const InputDecoration(
+                  labelText: 'Payment Date *',
+                  border: OutlineInputBorder(),
+                ),
+                readOnly: true,
+                onTap: () async {
+                  final date = await showDatePicker(
+                    context: context,
+                    initialDate: DateTime.now(),
+                    firstDate: DateTime(2020),
+                    lastDate: DateTime.now(),
+                  );
+                  if (date != null) {
+                    _dateController.text = date.toString().split(' ')[0];
+                  }
+                },
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                value: _selectedMethod,
+                decoration: const InputDecoration(
+                  labelText: 'Payment Method',
+                  border: OutlineInputBorder(),
+                ),
+                items: _paymentMethods.map((method) {
+                  return DropdownMenuItem(value: method, child: Text(method));
+                }).toList(),
+                onChanged: (value) => setState(() => _selectedMethod = value!),
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                value: _selectedStatus,
+                decoration: const InputDecoration(
+                  labelText: 'Status',
+                  border: OutlineInputBorder(),
+                ),
+                items: _statusOptions.map((status) {
+                  return DropdownMenuItem(value: status, child: Text(status));
+                }).toList(),
+                onChanged: (value) => setState(() => _selectedStatus = value!),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isLoading ? null : () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: _isLoading ? null : _updatePayment,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF667eea),
+            foregroundColor: Colors.white,
+          ),
+          child: _isLoading
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.white)),
+                )
+              : const Text('Update'),
+        ),
+      ],
+    );
+  }
+
+  void _updatePayment() async {
+    if (_formKey.currentState!.validate()) {
+      setState(() => _isLoading = true);
+
+      try {
+        final user = FirebaseAuth.instance.currentUser;
+        if (user != null) {
+          final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+          final userData = userDoc.data();
+          final rentalName = userData?['rental'] as String?;
+          
+          if (rentalName != null && rentalName.isNotEmpty) {
+            await FirebaseFirestore.instance
+                .collection('rentals')
+                .doc(rentalName)
+                .collection('payments')
+                .doc(widget.paymentId)
+                .update({
+              'tenantName': _tenantController.text.trim(),
+              'unit': _selectedUnit ?? '',
+              'amount': double.parse(_amountController.text.trim()),
+              'date': _dateController.text,
+              'method': _selectedMethod,
+              'status': _selectedStatus,
+              'updatedAt': FieldValue.serverTimestamp(),
+            });
+
+            Navigator.pop(context);
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Payment updated successfully!'), backgroundColor: Colors.green),
             );
           }
         }
