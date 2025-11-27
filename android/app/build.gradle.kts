@@ -10,6 +10,7 @@ plugins {
 android {
     namespace = "com.example.rentalapp"
     compileSdk = 36  // Updated to support shared_preferences_android
+    ndkVersion = "26.1.10909125"
     
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
