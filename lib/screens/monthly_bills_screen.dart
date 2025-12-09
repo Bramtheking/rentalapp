@@ -29,12 +29,16 @@ class _MonthlyBillsScreenState extends State<MonthlyBillsScreen> {
   List<Unit> _units = [];
   Map<String, TextEditingController> _waterControllers = {};
   Map<String, TextEditingController> _electricityControllers = {};
+  Map<String, TextEditingController> _dustbinControllers = {};
+  final TextEditingController _defaultDustbinController = TextEditingController();
   bool _isLoading = true;
   bool _isSaving = false;
+  String? _userRole;
 
   @override
   void initState() {
     super.initState();
+    _loadUserRole();
     _loadUnits();
   }
 
@@ -42,7 +46,22 @@ class _MonthlyBillsScreenState extends State<MonthlyBillsScreen> {
   void dispose() {
     _waterControllers.values.forEach((controller) => controller.dispose());
     _electricityControllers.values.forEach((controller) => controller.dispose());
+    _dustbinControllers.values.forEach((controller) => controller.dispose());
     super.dispose();
+  }
+
+  Future<void> _loadUserRole() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        final userDoc = await _firestore.collection('users').doc(user.uid).get();
+        setState(() {
+          _userRole = userDoc.data()?['userType'] ?? '';
+        });
+      }
+    } catch (e) {
+      print('Error loading user role: $e');
+    }
   }
 
   Future<void> _loadUnits() async {
@@ -63,17 +82,20 @@ class _MonthlyBillsScreenState extends State<MonthlyBillsScreen> {
       // Initialize controllers
       _waterControllers.clear();
       _electricityControllers.clear();
+      _dustbinControllers.clear();
 
       for (var unit in units) {
         // Check if bills already exist for this month
         double water = 0;
         double electricity = 0;
+        double dustbin = unit.fixedBills['dustbin'] ?? 0;
 
         if (unit.currentBillsMonth != null) {
           final unitMonth = DateTime.parse(unit.currentBillsMonth!);
           if (unitMonth.year == _selectedMonth.year && unitMonth.month == _selectedMonth.month) {
             water = unit.currentMonthBills?['water'] ?? 0;
             electricity = unit.currentMonthBills?['electricity'] ?? 0;
+            dustbin = unit.currentMonthBills?['dustbin'] ?? dustbin;
           }
         }
 
@@ -82,6 +104,9 @@ class _MonthlyBillsScreenState extends State<MonthlyBillsScreen> {
         );
         _electricityControllers[unit.unitNumber] = TextEditingController(
           text: electricity > 0 ? electricity.toStringAsFixed(0) : '',
+        );
+        _dustbinControllers[unit.unitNumber] = TextEditingController(
+          text: dustbin > 0 ? dustbin.toStringAsFixed(0) : '',
         );
       }
 
@@ -115,9 +140,11 @@ class _MonthlyBillsScreenState extends State<MonthlyBillsScreen> {
       for (var unit in _units) {
         final waterText = _waterControllers[unit.unitNumber]?.text.trim() ?? '';
         final electricityText = _electricityControllers[unit.unitNumber]?.text.trim() ?? '';
+        final dustbinText = _dustbinControllers[unit.unitNumber]?.text.trim() ?? '';
 
         final water = waterText.isEmpty ? 0.0 : double.parse(waterText);
         final electricity = electricityText.isEmpty ? 0.0 : double.parse(electricityText);
+        final dustbin = dustbinText.isEmpty ? 0.0 : double.parse(dustbinText);
 
         billsMap[unit.unitNumber] = UnitBills(
           water: water,
@@ -134,6 +161,7 @@ class _MonthlyBillsScreenState extends State<MonthlyBillsScreen> {
           'currentMonthBills': {
             'water': water,
             'electricity': electricity,
+            'dustbin': dustbin,
           },
           'currentBillsMonth': _selectedMonth.toIso8601String(),
           'updatedAt': FieldValue.serverTimestamp(),
@@ -202,24 +230,28 @@ class _MonthlyBillsScreenState extends State<MonthlyBillsScreen> {
       sheetObject.appendRow([
         excel.TextCellValue('Unit'),
         excel.TextCellValue('Tenant'),
+        excel.TextCellValue('Monthly Rent (KES)'),
         excel.TextCellValue('Water (KES)'),
         excel.TextCellValue('Electricity (KES)'),
         excel.TextCellValue('Dustbin (KES)'),
-        excel.TextCellValue('Total Bills (KES)'),
+        excel.TextCellValue('Total (KES)'),
       ]);
       
       // Add data rows
       for (var unit in _units) {
         final waterText = _waterControllers[unit.unitNumber]?.text.trim() ?? '';
         final electricityText = _electricityControllers[unit.unitNumber]?.text.trim() ?? '';
+        final dustbinText = _dustbinControllers[unit.unitNumber]?.text.trim() ?? '';
         final water = waterText.isEmpty ? 0.0 : double.parse(waterText);
         final electricity = electricityText.isEmpty ? 0.0 : double.parse(electricityText);
-        final dustbin = unit.fixedBills['dustbin'] ?? 0;
-        final total = water + electricity + dustbin;
+        final dustbin = dustbinText.isEmpty ? 0.0 : double.parse(dustbinText);
+        final monthlyRent = unit.baseRent;
+        final total = monthlyRent + water + electricity + dustbin;
         
         sheetObject.appendRow([
           excel.TextCellValue(unit.unitNumber),
           excel.TextCellValue(unit.tenantName ?? 'Vacant'),
+          excel.DoubleCellValue(monthlyRent),
           excel.DoubleCellValue(water),
           excel.DoubleCellValue(electricity),
           excel.DoubleCellValue(dustbin),
@@ -263,19 +295,22 @@ class _MonthlyBillsScreenState extends State<MonthlyBillsScreen> {
       
       // Prepare data
       List<List<String>> tableData = [];
-      tableData.add(['Unit', 'Tenant', 'Water', 'Electricity', 'Dustbin', 'Total']);
+      tableData.add(['Unit', 'Tenant', 'Rent', 'Water', 'Electricity', 'Dustbin', 'Total']);
       
       for (var unit in _units) {
         final waterText = _waterControllers[unit.unitNumber]?.text.trim() ?? '';
         final electricityText = _electricityControllers[unit.unitNumber]?.text.trim() ?? '';
+        final dustbinText = _dustbinControllers[unit.unitNumber]?.text.trim() ?? '';
         final water = waterText.isEmpty ? 0.0 : double.parse(waterText);
         final electricity = electricityText.isEmpty ? 0.0 : double.parse(electricityText);
-        final dustbin = unit.fixedBills['dustbin'] ?? 0;
-        final total = water + electricity + dustbin;
+        final dustbin = dustbinText.isEmpty ? 0.0 : double.parse(dustbinText);
+        final monthlyRent = unit.baseRent;
+        final total = monthlyRent + water + electricity + dustbin;
         
         tableData.add([
           unit.unitNumber,
           unit.tenantName ?? 'Vacant',
+          monthlyRent.toStringAsFixed(0),
           water.toStringAsFixed(0),
           electricity.toStringAsFixed(0),
           dustbin.toStringAsFixed(0),
@@ -518,6 +553,17 @@ class _MonthlyBillsScreenState extends State<MonthlyBillsScreen> {
                                       Expanded(
                                         flex: 2,
                                         child: Text(
+                                          'Monthly Rent',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.white,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                      ),
+                                      Expanded(
+                                        flex: 2,
+                                        child: Text(
                                           'Water (KES)',
                                           style: TextStyle(
                                             fontWeight: FontWeight.bold,
@@ -551,7 +597,7 @@ class _MonthlyBillsScreenState extends State<MonthlyBillsScreen> {
                                       Expanded(
                                         flex: 2,
                                         child: Text(
-                                          'Total Bills',
+                                          'Total',
                                           style: TextStyle(
                                             fontWeight: FontWeight.bold,
                                             color: Colors.white,
@@ -611,7 +657,9 @@ class _MonthlyBillsScreenState extends State<MonthlyBillsScreen> {
   Widget _buildUnitRow(Unit unit) {
     final waterController = _waterControllers[unit.unitNumber]!;
     final electricityController = _electricityControllers[unit.unitNumber]!;
-    final dustbin = unit.fixedBills['dustbin'] ?? 0;
+    final dustbinController = _dustbinControllers[unit.unitNumber]!;
+    final monthlyRent = unit.baseRent;
+    final isEditor = _userRole == 'editor';
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -658,11 +706,27 @@ class _MonthlyBillsScreenState extends State<MonthlyBillsScreen> {
             ),
           ),
 
-          // Water Input
+          // Monthly Rent (Read-only for everyone)
+          Expanded(
+            flex: 2,
+            child: Text(
+              monthlyRent > 0 ? monthlyRent.toStringAsFixed(0) : '-',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey[800],
+              ),
+            ),
+          ),
+
+          const SizedBox(width: 8),
+
+          // Water Input (Editable for editors)
           Expanded(
             flex: 2,
             child: TextField(
               controller: waterController,
+              enabled: !isEditor || isEditor, // Editors can edit
               decoration: InputDecoration(
                 hintText: '0',
                 border: OutlineInputBorder(
@@ -670,6 +734,8 @@ class _MonthlyBillsScreenState extends State<MonthlyBillsScreen> {
                 ),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 isDense: true,
+                filled: isEditor,
+                fillColor: isEditor ? Colors.blue[50] : null,
               ),
               keyboardType: TextInputType.number,
               inputFormatters: [
@@ -681,11 +747,12 @@ class _MonthlyBillsScreenState extends State<MonthlyBillsScreen> {
 
           const SizedBox(width: 8),
 
-          // Electricity Input
+          // Electricity Input (Editable for editors)
           Expanded(
             flex: 2,
             child: TextField(
               controller: electricityController,
+              enabled: !isEditor || isEditor, // Editors can edit
               decoration: InputDecoration(
                 hintText: '0',
                 border: OutlineInputBorder(
@@ -693,6 +760,8 @@ class _MonthlyBillsScreenState extends State<MonthlyBillsScreen> {
                 ),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 isDense: true,
+                filled: isEditor,
+                fillColor: isEditor ? Colors.blue[50] : null,
               ),
               keyboardType: TextInputType.number,
               inputFormatters: [
@@ -704,25 +773,37 @@ class _MonthlyBillsScreenState extends State<MonthlyBillsScreen> {
 
           const SizedBox(width: 8),
 
-          // Dustbin (Fixed)
+          // Dustbin Input (Editable - NOT fixed anymore)
           Expanded(
             flex: 2,
-            child: Text(
-              dustbin > 0 ? dustbin.toStringAsFixed(0) : '-',
-              style: TextStyle(
-                fontSize: 13,
-                color: Colors.grey[700],
+            child: TextField(
+              controller: dustbinController,
+              enabled: !isEditor, // Editors CANNOT edit dustbin
+              decoration: InputDecoration(
+                hintText: '0',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                isDense: true,
+                filled: isEditor,
+                fillColor: isEditor ? Colors.grey[200] : null,
               ),
+              keyboardType: TextInputType.number,
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
+              ],
+              onChanged: (_) => setState(() {}),
             ),
           ),
 
           const SizedBox(width: 8),
 
-          // Total
+          // Total (Rent + Bills)
           Expanded(
             flex: 2,
             child: Text(
-              _calculateTotal(waterController.text, electricityController.text, dustbin).toStringAsFixed(0),
+              _calculateTotal(monthlyRent, waterController.text, electricityController.text, dustbinController.text).toStringAsFixed(0),
               style: const TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.bold,
@@ -735,10 +816,11 @@ class _MonthlyBillsScreenState extends State<MonthlyBillsScreen> {
     );
   }
 
-  double _calculateTotal(String water, String electricity, double dustbin) {
+  double _calculateTotal(double rent, String water, String electricity, String dustbin) {
     final waterAmount = water.isEmpty ? 0.0 : double.tryParse(water) ?? 0.0;
     final electricityAmount = electricity.isEmpty ? 0.0 : double.tryParse(electricity) ?? 0.0;
-    return waterAmount + electricityAmount + dustbin;
+    final dustbinAmount = dustbin.isEmpty ? 0.0 : double.tryParse(dustbin) ?? 0.0;
+    return rent + waterAmount + electricityAmount + dustbinAmount;
   }
 
   List<DropdownMenuItem<DateTime>> _generateMonthOptions() {

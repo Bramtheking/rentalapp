@@ -17,6 +17,7 @@ import 'units_screen.dart';
 import 'sms_screen.dart';
 import 'expenses_screen.dart';
 import 'reports_screen.dart';
+import 'settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -31,6 +32,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String _selectedBuildingName = 'Select Building';
   List<Map<String, dynamic>> _userBuildings = [];
   bool _isLoadingBuildings = true;
+  bool _isInitializing = true;
   String? _userRole;
   bool _canCreateBuildings = false;
   Timer? _autoSyncTimer;
@@ -43,6 +45,7 @@ class _HomeScreenState extends State<HomeScreen> {
     'SMS Communications',
     'Expenses',
     'Reports',
+    'Settings',
     'Profile',
   ];
 
@@ -64,6 +67,10 @@ class _HomeScreenState extends State<HomeScreen> {
     await _restoreBuildingSelectionFromStorage();
     // Then load user data and buildings
     await _loadUserData();
+    // Mark initialization as complete
+    setState(() {
+      _isInitializing = false;
+    });
   }
 
   Future<void> _restoreBuildingSelectionFromStorage() async {
@@ -71,17 +78,15 @@ class _HomeScreenState extends State<HomeScreen> {
       SharedPreferences prefs = await SharedPreferences.getInstance();
       String? lastSelectedId = prefs.getString('selected_building_id');
       String? lastSelectedName = prefs.getString('selected_building_name');
-      
-      // Clear any saved tab index to always start fresh
-      await prefs.remove('selected_tab_index');
+      int? lastSelectedTab = prefs.getInt('selected_tab_index');
       
       setState(() {
         if (lastSelectedId != null && lastSelectedName != null) {
           _selectedBuildingId = lastSelectedId;
           _selectedBuildingName = lastSelectedName;
         }
-        // Always start at Dashboard (0) when app opens
-        _selectedIndex = 0;
+        // Restore last selected tab, or default to Dashboard (0)
+        _selectedIndex = lastSelectedTab ?? 0;
       });
     } catch (e) {
       print('Error restoring building selection from storage: $e');
@@ -437,6 +442,29 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Show loading screen while initializing
+    if (_isInitializing) {
+      return Scaffold(
+        body: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Color(0xFF667eea),
+                Color(0xFF764ba2),
+              ],
+            ),
+          ),
+          child: const Center(
+            child: CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+            ),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -690,7 +718,8 @@ class _HomeScreenState extends State<HomeScreen> {
                               margin: const EdgeInsets.symmetric(horizontal: 16),
                             ),
                             const SizedBox(height: 16),
-                            _buildModernNavItem(Icons.person_rounded, 'Profile', 7),
+                            _buildModernNavItem(Icons.settings_rounded, 'Settings', 7),
+                            _buildModernNavItem(Icons.person_rounded, 'Profile', 8),
                           ],
                         ),
                       ),
@@ -906,8 +935,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   bool _requiresBuilding(int index) {
-    // Dashboard (0) and Profile (7) don't require building selection
-    return index != 0 && index != 7;
+    // Dashboard (0), Settings (7), and Profile (8) don't require building selection
+    return index != 0 && index != 7 && index != 8;
   }
 
   Widget _buildMainContent() {
@@ -940,6 +969,8 @@ class _HomeScreenState extends State<HomeScreen> {
       case 6:
         return _buildingRequired(const ReportsScreen());
       case 7:
+        return SettingsScreen(selectedBuildingId: _selectedBuildingId);
+      case 8:
         return const ProfilePage();
       default:
         return DashboardPage(
